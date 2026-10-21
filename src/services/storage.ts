@@ -34,6 +34,13 @@ export function initFirestoreListeners(
   onNotificationsUpdate: (notifs: ClinicNotification[]) => void,
   onSettingsUpdate: (settings: ClinicSettings) => void
 ) {
+  if (!db) {
+    onAppointmentsUpdate(getStoredAppointments());
+    onNotificationsUpdate(getStoredNotifications());
+    onSettingsUpdate(getStoredSettings());
+    return () => {};
+  }
+
   // 1. Appointments real-time listener
   const aptsCol = collection(db, 'appointments');
   const unsubscribeApts = onSnapshot(

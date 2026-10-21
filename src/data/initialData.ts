@@ -1,4 +1,5 @@
 import { Service, Professional, Appointment, ClinicNotification, ClinicSettings } from '../types';
+import avatarPodologistImg from '../assets/images/avatar_podologist_1792490645478.jpg';
 
 export const INITIAL_SERVICES: Service[] = [
   {
@@ -77,7 +78,7 @@ export const INITIAL_PROFESSIONALS: Professional[] = [
     name: 'Dra. Laura Mendes',
     role: 'Podóloga Especialista & Laserterapeuta',
     registry: 'ABP 4829-SP',
-    avatar: '/src/assets/images/avatar_podologist_1792490645478.jpg',
+    avatar: avatarPodologistImg,
     bio: '12 anos de experiência em tratamentos avançados de unhas encravadas, laserterapia e reabilitação da lâmina ungueal.',
     workDays: [1, 2, 3, 4, 5, 6],
   },

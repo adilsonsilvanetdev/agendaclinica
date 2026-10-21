@@ -1,6 +1,7 @@
 import React from 'react';
 import { Clock, CheckCircle, ArrowRight, Shield, Award } from 'lucide-react';
 import { Service, ClinicSettings } from '../types';
+import heroClinicImage from '../assets/images/hero_podologia_clinic_1792490645791.jpg';
 
 interface ServicesCatalogProps {
   services: Service[];
@@ -18,7 +19,7 @@ export const ServicesCatalog: React.FC<ServicesCatalogProps> = ({
       {/* Hero Banner with Generated Clinic Photo */}
       <div className="relative rounded-3xl overflow-hidden border border-slate-200 bg-slate-900 shadow-sm">
         <img
-          src="/src/assets/images/hero_podologia_clinic_1792490645791.jpg"
+          src={heroClinicImage}
           alt="Clínica Moderna de Podologia"
           referrerPolicy="no-referrer"
           className="w-full h-56 sm:h-72 md:h-80 object-cover opacity-85"
