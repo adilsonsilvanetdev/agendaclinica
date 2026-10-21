@@ -19,6 +19,7 @@ import { Service, Professional, Appointment, ClinicSettings } from '../types';
 import {
   createAppointment,
   getAvailableSlots,
+  getStoredAppointments,
   buildWhatsAppLink,
   formatWhatsAppConfirmationMessage,
   downloadCalendarEvent,
@@ -80,7 +81,9 @@ export const BookingFlow: React.FC<BookingFlowProps> = ({
     return getAvailableSlots(selectedDate, selectedProfessionalId, settings.openHour, settings.closeHour);
   }, [selectedDate, selectedProfessionalId, settings.openHour, settings.closeHour, confirmedAppointment]);
 
-  // Phone masking helper (XX) XXXXX-XXXX
+  const [returningPatientNotice, setReturningPatientNotice] = useState<string | null>(null);
+
+  // Phone masking helper & automatic recognition of returning patient
   const handlePhoneChange = (val: string) => {
     const digits = val.replace(/\D/g, '').slice(0, 11);
     let formatted = digits;
@@ -91,6 +94,32 @@ export const BookingFlow: React.FC<BookingFlowProps> = ({
       formatted = `(${digits.slice(0, 2)}) ${digits.slice(2, 7)}-${digits.slice(7)}`;
     }
     setClientPhone(formatted);
+
+    // Auto-detect returning patient if phone has 10 or 11 digits
+    if (digits.length >= 10) {
+      const allApts = getStoredAppointments();
+      const pastApt = allApts.find((a) => a.clientPhone.replace(/\D/g, '') === digits);
+      if (pastApt) {
+        setIsFirstVisit(false);
+        const pastVisitsCount = allApts.filter((a) => a.clientPhone.replace(/\D/g, '') === digits).length;
+        setReturningPatientNotice(
+          `Identificamos seu cadastro! Seja bem-vindo(a) de volta para sua ${pastVisitsCount + 1}ª consulta.`
+        );
+        if (!clientName && pastApt.clientName) {
+          setClientName(pastApt.clientName);
+        }
+        if (!clientEmail && pastApt.clientEmail) {
+          setClientEmail(pastApt.clientEmail);
+        }
+        if (!clientBirthDate && pastApt.clientBirthDate) {
+          setClientBirthDate(pastApt.clientBirthDate);
+        }
+      } else {
+        setReturningPatientNotice(null);
+      }
+    } else {
+      setReturningPatientNotice(null);
+    }
   };
 
   // Next 14 dates for easy horizontal chip selection
@@ -602,6 +631,12 @@ export const BookingFlow: React.FC<BookingFlowProps> = ({
                   Já sou paciente
                 </button>
               </div>
+              {returningPatientNotice && (
+                <div className="text-[11px] font-semibold text-emerald-900 bg-emerald-50 border border-emerald-200 px-2.5 py-1.5 rounded-lg mt-2 flex items-center gap-1.5">
+                  <Sparkles className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
+                  <span>{returningPatientNotice}</span>
+                </div>
+              )}
             </div>
 
             <div className="sm:col-span-2">

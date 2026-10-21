@@ -579,17 +579,36 @@ export const ClinicAdmin: React.FC<ClinicAdminProps> = ({
 
                         {/* Patient info */}
                         <td className="py-3 px-4">
-                          <div className="font-bold text-slate-900 flex items-center gap-1.5">
-                            <span>{apt.clientName}</span>
-                            {apt.isFirstVisit && (
-                              <span className="text-[10px] bg-blue-100 text-blue-800 font-medium px-1.5 py-0.2 rounded">
-                                1ª vez
-                              </span>
-                            )}
-                          </div>
-                          <div className="text-xs text-slate-500 tabular-nums">
-                            {apt.clientPhone}
-                          </div>
+                          {(() => {
+                            const cleanPhone = apt.clientPhone.replace(/\D/g, '');
+                            const patientApts = appointments.filter((a) => a.clientPhone.replace(/\D/g, '') === cleanPhone);
+                            const totalVisits = patientApts.length;
+                            const isSecond = totalVisits === 2 || (!apt.isFirstVisit && totalVisits <= 2);
+
+                            return (
+                              <div>
+                                <div className="font-bold text-slate-900 flex items-center gap-1.5">
+                                  <span>{apt.clientName}</span>
+                                  {apt.isFirstVisit || totalVisits <= 1 ? (
+                                    <span className="text-[10px] bg-blue-100 text-blue-800 font-semibold px-1.5 py-0.5 rounded">
+                                      1ª consulta
+                                    </span>
+                                  ) : isSecond ? (
+                                    <span className="text-[10px] bg-emerald-100 text-emerald-800 font-semibold px-1.5 py-0.5 rounded">
+                                      2ª consulta (Retorno)
+                                    </span>
+                                  ) : (
+                                    <span className="text-[10px] bg-purple-100 text-purple-800 font-semibold px-1.5 py-0.5 rounded">
+                                      {totalVisits}ª consulta (Fidelizado)
+                                    </span>
+                                  )}
+                                </div>
+                                <div className="text-xs text-slate-500 tabular-nums">
+                                  {apt.clientPhone}
+                                </div>
+                              </div>
+                            );
+                          })()}
                         </td>
 
                         {/* Service */}
@@ -1182,6 +1201,58 @@ export const ClinicAdmin: React.FC<ClinicAdminProps> = ({
                   <p>{viewingAppointment.cancellationReason}</p>
                 </div>
               )}
+
+              {/* Histórico completo de consultas deste paciente */}
+              {(() => {
+                const cleanPhone = viewingAppointment.clientPhone.replace(/\D/g, '');
+                const patientPastVisits = appointments.filter(
+                  (a) => a.clientPhone.replace(/\D/g, '') === cleanPhone
+                );
+
+                return (
+                  <div className="pt-2 border-t border-slate-100">
+                    <div className="flex items-center justify-between text-xs font-bold text-slate-800 mb-2">
+                      <span>Histórico do Paciente na Clínica:</span>
+                      <span className="text-teal-700 font-semibold tabular-nums">
+                        {patientPastVisits.length} atendimento(s) no total
+                      </span>
+                    </div>
+
+                    <div className="space-y-1.5 max-h-36 overflow-y-auto pr-1">
+                      {patientPastVisits.map((past, idx) => (
+                        <div
+                          key={past.id}
+                          className={`p-2 rounded-lg border flex items-center justify-between text-[11px] ${
+                            past.id === viewingAppointment.id
+                              ? 'bg-teal-50/70 border-teal-200'
+                              : 'bg-slate-50 border-slate-100'
+                          }`}
+                        >
+                          <div>
+                            <span className="font-semibold text-slate-800">
+                              Consulta #{idx + 1} · {past.date.split('-').reverse().join('/')} às {past.time}
+                            </span>
+                            <span className="text-slate-500 block">
+                              {serviceMap.get(past.serviceId)?.name || 'Podologia'}
+                            </span>
+                          </div>
+                          <span
+                            className={`px-1.5 py-0.5 rounded font-semibold text-[10px] ${
+                              past.status === 'concluido'
+                                ? 'bg-emerald-100 text-emerald-800'
+                                : past.status.startsWith('cancelado')
+                                ? 'bg-rose-100 text-rose-800'
+                                : 'bg-teal-100 text-teal-800'
+                            }`}
+                          >
+                            {past.status}
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                );
+              })()}
             </div>
 
             <div className="pt-3 border-t border-slate-100 flex items-center justify-between gap-2">
