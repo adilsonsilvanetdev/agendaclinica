@@ -1,0 +1,89 @@
+{
+  "entities": {
+    "Appointment": {
+      "title": "Appointment",
+      "description": "Agendamento de podologia feito pelo paciente ou pela recepção da clínica.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "code": { "type": "string" },
+        "clientName": { "type": "string" },
+        "clientPhone": { "type": "string" },
+        "clientEmail": { "type": "string" },
+        "clientBirthDate": { "type": "string" },
+        "isFirstVisit": { "type": "boolean" },
+        "notes": { "type": "string" },
+        "serviceId": { "type": "string" },
+        "professionalId": { "type": "string" },
+        "date": { "type": "string" },
+        "time": { "type": "string" },
+        "status": {
+          "type": "string",
+          "enum": ["agendado", "concluido", "cancelado_cliente", "cancelado_clinica"]
+        },
+        "cancellationReason": { "type": "string" },
+        "cancelledAt": { "type": "string" },
+        "createdAt": { "type": "string" },
+        "confirmationChannel": {
+          "type": "string",
+          "enum": ["whatsapp", "email", "ambos"]
+        },
+        "price": { "type": "number" }
+      },
+      "required": ["code", "clientName", "clientPhone", "serviceId", "professionalId", "date", "time", "status"]
+    },
+    "Notification": {
+      "title": "Notification",
+      "description": "Notificação em tempo real para a equipe da clínica.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "appointmentId": { "type": "string" },
+        "type": {
+          "type": "string",
+          "enum": ["cancelamento_cliente", "novo_agendamento", "horario_liberado"]
+        },
+        "clientName": { "type": "string" },
+        "serviceName": { "type": "string" },
+        "date": { "type": "string" },
+        "time": { "type": "string" },
+        "reason": { "type": "string" },
+        "timestamp": { "type": "string" },
+        "read": { "type": "boolean" }
+      },
+      "required": ["type", "clientName", "date", "time", "read"]
+    },
+    "Settings": {
+      "title": "Settings",
+      "description": "Configurações da clínica e contatos.",
+      "type": "object",
+      "properties": {
+        "clinicName": { "type": "string" },
+        "phone": { "type": "string" },
+        "whatsapp": { "type": "string" },
+        "email": { "type": "string" },
+        "address": { "type": "string" },
+        "city": { "type": "string" },
+        "adminPin": { "type": "string" },
+        "openHour": { "type": "number" },
+        "closeHour": { "type": "number" },
+        "slotIntervalMin": { "type": "number" }
+      },
+      "required": ["clinicName", "whatsapp", "adminPin"]
+    }
+  },
+  "firestore": {
+    "/appointments/{appointmentId}": {
+      "schema": { "$ref": "#/entities/Appointment" },
+      "description": "Coleção de agendamentos de podologia acessível para consulta, marcação e cancelamento."
+    },
+    "/notifications/{notificationId}": {
+      "schema": { "$ref": "#/entities/Notification" },
+      "description": "Coleção de notificações em tempo real para o painel da clínica."
+    },
+    "/settings/{settingsId}": {
+      "schema": { "$ref": "#/entities/Settings" },
+      "description": "Configurações gerais da clínica."
+    }
+  }
+}

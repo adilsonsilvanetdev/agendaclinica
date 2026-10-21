@@ -1,0 +1,61 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Default deny for unmapped paths
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // Helper functions
+    function isValidId(id) {
+      return id is string && id.size() > 0 && id.size() <= 128;
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    // Appointments Collection
+    // Allows public creation by clients (scheduling) and consultation/cancellation
+    match /appointments/{appointmentId} {
+      allow read: if isValidId(appointmentId);
+      
+      allow create: if isValidId(appointmentId)
+        && incoming().code is string
+        && incoming().clientName is string
+        && incoming().clientPhone is string
+        && incoming().serviceId is string
+        && incoming().professionalId is string
+        && incoming().date is string
+        && incoming().time is string
+        && incoming().status in ['agendado', 'concluido', 'cancelado_cliente', 'cancelado_clinica'];
+
+      allow update: if isValidId(appointmentId)
+        && incoming().status in ['agendado', 'concluido', 'cancelado_cliente', 'cancelado_clinica'];
+
+      allow delete: if isValidId(appointmentId);
+    }
+
+    // Notifications Collection
+    // Clinic notifications for new bookings and immediate cancellations
+    match /notifications/{notificationId} {
+      allow read: if isValidId(notificationId);
+      
+      allow create: if isValidId(notificationId)
+        && incoming().type in ['cancelamento_cliente', 'novo_agendamento', 'horario_liberado']
+        && incoming().clientName is string;
+
+      allow update: if isValidId(notificationId);
+      
+      allow delete: if false;
+    }
+
+    // Settings Collection
+    match /settings/{settingsId} {
+      allow read: if isValidId(settingsId);
+      allow write: if isValidId(settingsId);
+    }
+  }
+}
