@@ -192,14 +192,20 @@ export const ClinicAdmin: React.FC<ClinicAdminProps> = ({
   // Handle Permanent Delete
   const handleConfirmDelete = async () => {
     if (!deletingApt) return;
-    setIsDeleting(true);
-    await deleteAppointment(deletingApt.id);
-    setIsDeleting(false);
-    setDeletingApt(null);
-    if (viewingAppointment?.id === deletingApt.id) {
-      setViewingAppointment(null);
+    const targetId = deletingApt.id;
+    try {
+      setIsDeleting(true);
+      await deleteAppointment(targetId);
+    } catch (err) {
+      console.error('Erro ao excluir agendamento:', err);
+    } finally {
+      setIsDeleting(false);
+      setDeletingApt(null);
+      if (viewingAppointment?.id === targetId) {
+        setViewingAppointment(null);
+      }
+      onAppointmentsChange();
     }
-    onAppointmentsChange();
   };
 
   // Handle Export CSV

@@ -22,11 +22,35 @@ import {
 const APPOINTMENTS_KEY = 'podoclinica_appointments_v1';
 const NOTIFICATIONS_KEY = 'podoclinica_notifications_v1';
 const SETTINGS_KEY = 'podoclinica_settings_v1';
+const DELETED_APPOINTMENTS_KEY = 'podoclinica_deleted_ids_v1';
 
 // Local cache
 let inMemoryAppointments: Appointment[] = [];
 let inMemoryNotifications: ClinicNotification[] = [];
 let inMemorySettings: ClinicSettings = INITIAL_SETTINGS;
+
+// Deleted appointments tombstone tracker to prevent deleted items from being resurrected
+export function markAppointmentAsDeleted(id: string): void {
+  try {
+    const raw = localStorage.getItem(DELETED_APPOINTMENTS_KEY);
+    const set = new Set<string>(raw ? JSON.parse(raw) : []);
+    set.add(id);
+    localStorage.setItem(DELETED_APPOINTMENTS_KEY, JSON.stringify(Array.from(set)));
+  } catch (e) {
+    console.warn(e);
+  }
+}
+
+export function isAppointmentDeleted(id: string): boolean {
+  try {
+    const raw = localStorage.getItem(DELETED_APPOINTMENTS_KEY);
+    if (!raw) return false;
+    const list: string[] = JSON.parse(raw);
+    return Array.isArray(list) && list.includes(id);
+  } catch {
+    return false;
+  }
+}
 
 // Initialize and subscribe to Firestore
 export function initFirestoreListeners(
@@ -51,37 +75,28 @@ export function initFirestoreListeners(
         const local = getStoredAppointments();
         const toUpload = local && local.length > 0 ? local : generateSeedAppointments();
         for (const s of toUpload) {
+          if (isAppointmentDeleted(s.id)) continue;
           try {
             await setDoc(doc(db, 'appointments', s.id), s);
           } catch (e) {
             handleFirestoreError(e, OperationType.WRITE, `appointments/${s.id}`);
           }
         }
-        inMemoryAppointments = toUpload;
-        saveLocalAppointments(toUpload);
-        onAppointmentsUpdate(toUpload);
+        const filtered = toUpload.filter((item) => !isAppointmentDeleted(item.id));
+        inMemoryAppointments = filtered;
+        saveLocalAppointments(filtered);
+        onAppointmentsUpdate(filtered);
       } else {
         const loaded: Appointment[] = [];
         snapshot.forEach((d) => {
-          loaded.push(d.data() as Appointment);
-        });
-
-        // Automatically sync any appointments stored locally that aren't yet in Firestore
-        // (e.g. created offline or on PC before synchronization was finalized)
-        const localApts = getStoredAppointments();
-        const firestoreIds = new Set(loaded.map((a) => a.id));
-        const unsynced = localApts.filter((item) => !firestoreIds.has(item.id));
-
-        if (unsynced.length > 0) {
-          for (const item of unsynced) {
-            try {
-              await setDoc(doc(db, 'appointments', item.id), item);
-              loaded.push(item);
-            } catch (err) {
-              console.warn('Syncing unsynced local item to cloud:', err);
-            }
+          const item = d.data() as Appointment;
+          // If marked as deleted, ensure it stays removed and cleanup in Firestore if needed
+          if (isAppointmentDeleted(item.id)) {
+            deleteDoc(doc(db, 'appointments', item.id)).catch(() => {});
+            return;
           }
-        }
+          loaded.push(item);
+        });
 
         // Sort by date & time
         loaded.sort((a, b) => `${b.date} ${b.time}`.localeCompare(`${a.date} ${a.time}`));
@@ -217,20 +232,23 @@ export function saveStoredSettings(settings: ClinicSettings): void {
 }
 
 export function getStoredAppointments(): Appointment[] {
-  if (inMemoryAppointments.length > 0) return inMemoryAppointments;
+  if (inMemoryAppointments.length > 0) {
+    return inMemoryAppointments.filter((a) => !isAppointmentDeleted(a.id));
+  }
   try {
     const raw = localStorage.getItem(APPOINTMENTS_KEY);
     if (raw) {
       const data = JSON.parse(raw);
       if (Array.isArray(data) && data.length > 0) {
-        inMemoryAppointments = data;
-        return data;
+        const filtered = data.filter((a) => !isAppointmentDeleted(a.id));
+        inMemoryAppointments = filtered;
+        return filtered;
       }
     }
   } catch (e) {
     console.warn('Erro ao ler agendamentos do localStorage:', e);
   }
-  const seed = generateSeedAppointments();
+  const seed = generateSeedAppointments().filter((a) => !isAppointmentDeleted(a.id));
   inMemoryAppointments = seed;
   saveLocalAppointments(seed);
   return seed;
@@ -447,24 +465,40 @@ export function updateAppointmentStatus(
 }
 
 export async function deleteAppointment(appointmentId: string): Promise<boolean> {
-  // 1. Remove from in-memory cache and localStorage
-  const current = inMemoryAppointments.length > 0 ? inMemoryAppointments : getStoredAppointments();
-  inMemoryAppointments = current.filter((a) => a.id !== appointmentId);
-  saveLocalAppointments(inMemoryAppointments);
+  // 1. Mark as permanently deleted tombstone so no device or cache resurrects it
+  markAppointmentAsDeleted(appointmentId);
 
-  // Also remove any notification tied to this appointment
-  const notifs = inMemoryNotifications.length > 0 ? inMemoryNotifications : getStoredNotifications();
-  inMemoryNotifications = notifs.filter((n) => n.appointmentId !== appointmentId);
-  saveLocalNotifications(inMemoryNotifications);
+  // 2. Remove immediately from in-memory cache and localStorage
+  inMemoryAppointments = inMemoryAppointments.filter((a) => a.id !== appointmentId);
+  const currentLocal = getStoredAppointments().filter((a) => a.id !== appointmentId);
+  saveLocalAppointments(currentLocal);
 
-  // 2. Delete from Cloud Firestore
-  try {
-    await deleteDoc(doc(db, 'appointments', appointmentId));
-  } catch (err) {
-    handleFirestoreError(err, OperationType.DELETE, `appointments/${appointmentId}`);
+  // 3. Remove any notification tied to this appointment locally and from Cloud Firestore
+  const relatedNotifs = inMemoryNotifications.filter((n) => n.appointmentId === appointmentId);
+  inMemoryNotifications = inMemoryNotifications.filter((n) => n.appointmentId !== appointmentId);
+  const currentNotifs = getStoredNotifications().filter((n) => n.appointmentId !== appointmentId);
+  saveLocalNotifications(currentNotifs);
+
+  if (db) {
+    for (const notif of relatedNotifs) {
+      try {
+        deleteDoc(doc(db, 'notifications', notif.id)).catch(() => {});
+      } catch {
+        // quiet
+      }
+    }
   }
 
-  // 3. Dispatch event for UI reactivity
+  // 4. Delete from Cloud Firestore permanently
+  if (db) {
+    try {
+      await deleteDoc(doc(db, 'appointments', appointmentId));
+    } catch (err) {
+      handleFirestoreError(err, OperationType.DELETE, `appointments/${appointmentId}`);
+    }
+  }
+
+  // 5. Dispatch event for UI reactivity
   window.dispatchEvent(
     new CustomEvent('podoclinica_data_updated', {
       detail: { type: 'appointment_deleted', appointmentId },
