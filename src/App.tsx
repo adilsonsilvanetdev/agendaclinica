@@ -10,7 +10,6 @@ import { ClientAppointmentLookup } from './components/ClientAppointmentLookup';
 import { ServicesCatalog } from './components/ServicesCatalog';
 import { ClinicAdmin } from './components/ClinicAdmin';
 import { ClinicNotificationsModal } from './components/ClinicNotificationsModal';
-import { EmailPreviewModal } from './components/EmailPreviewModal';
 import { INITIAL_SERVICES, INITIAL_PROFESSIONALS } from './data/initialData';
 import {
   getStoredAppointments,
@@ -38,17 +37,6 @@ export default function App() {
   // Modals & transient state
   const [lookupInitialCode, setLookupInitialCode] = useState<string>('');
   const [isNotificationsOpen, setIsNotificationsOpen] = useState(false);
-  const [emailModalData, setEmailModalData] = useState<{
-    isOpen: boolean;
-    appointment: Appointment | null;
-    service: Service | null;
-    professional: Professional | null;
-  }>({
-    isOpen: false,
-    appointment: null,
-    service: null,
-    professional: null,
-  });
 
   // Floating immediate cancellation alert toast
   const [cancellationToast, setCancellationToast] = useState<{
@@ -114,19 +102,6 @@ export default function App() {
     });
   };
 
-  // Open email preview modal
-  const handleOpenEmailPreview = (
-    appointment: Appointment,
-    service: Service,
-    professional: Professional
-  ) => {
-    setEmailModalData({
-      isOpen: true,
-      appointment,
-      service,
-      professional,
-    });
-  };
 
   const handleNavigateToLookup = (code: string) => {
     setLookupInitialCode(code);
@@ -206,7 +181,6 @@ export default function App() {
             professionals={professionals}
             settings={settings}
             onAppointmentCreated={handleAppointmentCreated}
-            onOpenEmailPreview={handleOpenEmailPreview}
             onNavigateToLookup={handleNavigateToLookup}
           />
         )}
@@ -255,16 +229,6 @@ export default function App() {
         settings={settings}
       />
 
-      {/* Email Preview Modal */}
-      <EmailPreviewModal
-        isOpen={emailModalData.isOpen}
-        onClose={() => setEmailModalData((prev) => ({ ...prev, isOpen: false }))}
-        appointment={emailModalData.appointment}
-        service={emailModalData.service}
-        professional={emailModalData.professional}
-        settings={settings}
-      />
-
       {/* Clean Footer */}
       <footer className="bg-white border-t border-slate-200 mt-12 py-8 text-xs text-slate-500">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 flex flex-col sm:flex-row items-center justify-between gap-4">
@@ -274,10 +238,19 @@ export default function App() {
             <span>{settings.address}, {settings.city}</span>
           </div>
 
-          <div className="flex items-center gap-4">
+          <div className="flex flex-wrap items-center gap-4">
             <span>Central: {settings.phone}</span>
             <span>·</span>
             <span>WhatsApp: {settings.whatsapp}</span>
+            {settings.email && (
+              <>
+                <span>·</span>
+                <span className="flex items-center gap-1">
+                  <Mail className="w-3.5 h-3.5 text-slate-400" />
+                  {settings.email}
+                </span>
+              </>
+            )}
             <span>·</span>
             <button
               onClick={() => setCurrentTab('clinica')}

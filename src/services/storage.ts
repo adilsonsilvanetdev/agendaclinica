@@ -129,9 +129,16 @@ export function initFirestoreListeners(
         onSettingsUpdate(INITIAL_SETTINGS);
       } else {
         const data = snapshot.data() as ClinicSettings;
-        inMemorySettings = data;
-        saveStoredSettings(data);
-        onSettingsUpdate(data);
+        const normalizedSettings: ClinicSettings = {
+          ...INITIAL_SETTINGS,
+          ...data,
+          openHour: data.openHour === 8 ? 9 : (data.openHour || 9),
+          closeHour: data.closeHour || 19,
+          email: data.email || INITIAL_SETTINGS.email,
+        };
+        inMemorySettings = normalizedSettings;
+        saveStoredSettings(normalizedSettings);
+        onSettingsUpdate(normalizedSettings);
       }
     },
     (err) => {
@@ -150,11 +157,28 @@ export function initFirestoreListeners(
 export function getStoredSettings(): ClinicSettings {
   try {
     const raw = localStorage.getItem(SETTINGS_KEY);
-    if (raw) return JSON.parse(raw);
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      return {
+        ...INITIAL_SETTINGS,
+        ...parsed,
+        openHour: parsed.openHour === 8 ? 9 : (parsed.openHour || 9),
+        closeHour: parsed.closeHour || 19,
+        email: parsed.email || INITIAL_SETTINGS.email,
+      };
+    }
   } catch (e) {
     console.warn('Erro ao ler configurações do localStorage:', e);
   }
-  return inMemorySettings || INITIAL_SETTINGS;
+  return inMemorySettings
+    ? {
+        ...INITIAL_SETTINGS,
+        ...inMemorySettings,
+        openHour: inMemorySettings.openHour === 8 ? 9 : (inMemorySettings.openHour || 9),
+        closeHour: inMemorySettings.closeHour || 19,
+        email: inMemorySettings.email || INITIAL_SETTINGS.email,
+      }
+    : INITIAL_SETTINGS;
 }
 
 export function saveStoredSettings(settings: ClinicSettings): void {
@@ -404,9 +428,15 @@ export function updateAppointmentStatus(
 }
 
 export async function deleteAppointment(appointmentId: string): Promise<boolean> {
-  // 1. Remove from in-memory cache
-  inMemoryAppointments = inMemoryAppointments.filter((a) => a.id !== appointmentId);
+  // 1. Remove from in-memory cache and localStorage
+  const current = inMemoryAppointments.length > 0 ? inMemoryAppointments : getStoredAppointments();
+  inMemoryAppointments = current.filter((a) => a.id !== appointmentId);
   saveLocalAppointments(inMemoryAppointments);
+
+  // Also remove any notification tied to this appointment
+  const notifs = inMemoryNotifications.length > 0 ? inMemoryNotifications : getStoredNotifications();
+  inMemoryNotifications = notifs.filter((n) => n.appointmentId !== appointmentId);
+  saveLocalNotifications(inMemoryNotifications);
 
   // 2. Delete from Cloud Firestore
   try {
@@ -456,18 +486,33 @@ export function resetDemoData(): void {
   window.dispatchEvent(new CustomEvent('podoclinica_data_updated', { detail: { type: 'reset' } }));
 }
 
-// Available time slots calculation
+// Available time slots calculation synchronized with current time
 export function getAvailableSlots(
   dateStr: string,
   professionalId: string,
-  openHour: number = 8,
+  openHour: number = 9,
   closeHour: number = 19
-): { time: string; available: boolean; bookedBy?: string }[] {
+): { time: string; available: boolean; isPast?: boolean; bookedBy?: string }[] {
   const appointments = getStoredAppointments();
-  const slots: { time: string; available: boolean; bookedBy?: string }[] = [];
+  const slots: { time: string; available: boolean; isPast?: boolean; bookedBy?: string }[] = [];
 
-  for (let hour = openHour; hour < closeHour; hour++) {
+  // Determine current local date & time
+  const now = new Date();
+  const nowYear = now.getFullYear();
+  const nowMonth = String(now.getMonth() + 1).padStart(2, '0');
+  const nowDay = String(now.getDate()).padStart(2, '0');
+  const localTodayStr = `${nowYear}-${nowMonth}-${nowDay}`;
+  const currentHour = now.getHours();
+
+  const isToday = dateStr === localTodayStr;
+  const isPastDate = dateStr < localTodayStr;
+
+  // Generate slots from 09:00 up to 19:00 inclusive
+  for (let hour = openHour; hour <= closeHour; hour++) {
     const timeStr = `${hour.toString().padStart(2, '0')}:00`;
+
+    // Past slot if whole date is in the past, or if today and the slot hour is already elapsed or current
+    const isPast = isPastDate || (isToday && hour <= currentHour);
 
     // Only 'agendado' blocks the slot. Cancelled slots are immediately free!
     const activeAppointment = appointments.find(
@@ -478,9 +523,12 @@ export function getAvailableSlots(
         a.status === 'agendado'
     );
 
+    const available = !isPast && !activeAppointment;
+
     slots.push({
       time: timeStr,
-      available: !activeAppointment,
+      available,
+      isPast,
       bookedBy: activeAppointment ? activeAppointment.clientName : undefined,
     });
   }

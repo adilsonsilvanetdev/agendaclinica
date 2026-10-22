@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import {
   ShieldCheck,
   Lock,
@@ -22,6 +22,7 @@ import {
   FileText,
   User,
   Phone,
+  Mail,
   CalendarDays,
   Database,
   Cloud,
@@ -79,6 +80,7 @@ export const ClinicAdmin: React.FC<ClinicAdminProps> = ({
   const [statusFilter, setStatusFilter] = useState<'todos' | 'agendado' | 'concluido' | 'cancelado'>('todos');
   const [profFilter, setProfFilter] = useState<string>('todos');
   const [searchQuery, setSearchQuery] = useState('');
+  const [reportFilter, setReportFilter] = useState<'cancelados' | 'agendados' | 'todos'>('cancelados');
 
   // Selected appointment for detail / anamnese modal
   const [viewingAppointment, setViewingAppointment] = useState<Appointment | null>(null);
@@ -106,10 +108,24 @@ export const ClinicAdmin: React.FC<ClinicAdminProps> = ({
   const [editClinicName, setEditClinicName] = useState(settings.clinicName);
   const [editPhone, setEditPhone] = useState(settings.phone);
   const [editWhatsApp, setEditWhatsApp] = useState(settings.whatsapp);
-  const [editEmail, setEditEmail] = useState(settings.email);
+  const [editEmail, setEditEmail] = useState(settings.email || '');
   const [editAddress, setEditAddress] = useState(settings.address);
   const [editPin, setEditPin] = useState(settings.adminPin);
+  const [editOpenHour, setEditOpenHour] = useState(settings.openHour || 9);
+  const [editCloseHour, setEditCloseHour] = useState(settings.closeHour || 19);
   const [settingsSaved, setSettingsSaved] = useState(false);
+
+  // Synchronize state when settings are updated from Firestore or parent
+  useEffect(() => {
+    setEditClinicName(settings.clinicName || '');
+    setEditPhone(settings.phone || '');
+    setEditWhatsApp(settings.whatsapp || '');
+    setEditEmail(settings.email || '');
+    setEditAddress(settings.address || '');
+    setEditPin(settings.adminPin || '1234');
+    setEditOpenHour(settings.openHour || 9);
+    setEditCloseHour(settings.closeHour || 19);
+  }, [settings]);
 
   const todayStr = useMemo(() => new Date().toISOString().split('T')[0], []);
 
@@ -233,6 +249,8 @@ export const ClinicAdmin: React.FC<ClinicAdminProps> = ({
       email: editEmail,
       address: editAddress,
       adminPin: editPin || '1234',
+      openHour: Number(editOpenHour) || 9,
+      closeHour: Number(editCloseHour) || 19,
     };
     saveStoredSettings(updated);
     onUpdateSettings(updated);
@@ -748,37 +766,92 @@ export const ClinicAdmin: React.FC<ClinicAdminProps> = ({
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-100 pb-3">
               <div>
                 <h2 className="text-base font-bold text-slate-900">
-                  Relatório Analítico de Cancelamentos & Horários
+                  Relatório Analítico de Agendamentos & Cancelamentos
                 </h2>
                 <p className="text-xs text-slate-500">
-                  Auditoria de cancelamentos imediatos, motivos declarados pelos pacientes e taxa de liberação de horários.
+                  Auditoria detalhada da clínica. Exclua qualquer agendamento com status agendado ou cancelado para removê-lo definitivamente de todos os relatórios.
                 </p>
               </div>
 
-              <button
-                onClick={handleExportCSV}
-                className="inline-flex items-center gap-1.5 px-4 py-2 bg-emerald-700 text-white rounded-xl text-xs font-semibold hover:bg-emerald-800"
-              >
-                <Download className="w-3.5 h-3.5" />
-                <span>Exportar CSV Completo</span>
-              </button>
+              <div className="flex items-center gap-2">
+                {/* Report filter toggle */}
+                <div className="inline-flex rounded-lg bg-slate-100 p-0.5 text-xs">
+                  <button
+                    onClick={() => setReportFilter('cancelados')}
+                    className={`px-3 py-1 rounded-md font-medium transition-colors ${
+                      reportFilter === 'cancelados'
+                        ? 'bg-white text-slate-900 shadow-xs font-bold'
+                        : 'text-slate-600 hover:text-slate-900'
+                    }`}
+                  >
+                    Cancelados ({appointments.filter((a) => a.status.startsWith('cancelado')).length})
+                  </button>
+                  <button
+                    onClick={() => setReportFilter('agendados')}
+                    className={`px-3 py-1 rounded-md font-medium transition-colors ${
+                      reportFilter === 'agendados'
+                        ? 'bg-white text-slate-900 shadow-xs font-bold'
+                        : 'text-slate-600 hover:text-slate-900'
+                    }`}
+                  >
+                    Agendados ({appointments.filter((a) => a.status === 'agendado').length})
+                  </button>
+                  <button
+                    onClick={() => setReportFilter('todos')}
+                    className={`px-3 py-1 rounded-md font-medium transition-colors ${
+                      reportFilter === 'todos'
+                        ? 'bg-white text-slate-900 shadow-xs font-bold'
+                        : 'text-slate-600 hover:text-slate-900'
+                    }`}
+                  >
+                    Todos ({appointments.length})
+                  </button>
+                </div>
+
+                <button
+                  onClick={handleExportCSV}
+                  className="inline-flex items-center gap-1.5 px-3.5 py-1.5 bg-emerald-700 text-white rounded-xl text-xs font-semibold hover:bg-emerald-800 shrink-0"
+                >
+                  <Download className="w-3.5 h-3.5" />
+                  <span>CSV</span>
+                </button>
+              </div>
             </div>
 
-            {/* List of cancelled appointments with audit details */}
+            {/* List of appointments in the report with deletion option */}
             <div className="divide-y divide-slate-100">
               {appointments
-                .filter((a) => a.status.startsWith('cancelado'))
+                .filter((a) => {
+                  if (reportFilter === 'cancelados') return a.status.startsWith('cancelado');
+                  if (reportFilter === 'agendados') return a.status === 'agendado';
+                  return true;
+                })
                 .map((apt) => (
-                  <div key={apt.id} className="py-3 flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs">
+                  <div key={apt.id} className="py-3 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs">
                     <div>
                       <div className="flex items-center gap-2">
                         <span className="font-mono font-bold text-slate-900">{apt.code}</span>
                         <span className="text-slate-300">·</span>
                         <span className="font-semibold text-slate-800">{apt.clientName}</span>
                         <span className="text-slate-400 tabular-nums">({apt.clientPhone})</span>
+                        <span
+                          className={`text-[10px] font-semibold px-2 py-0.5 rounded ${
+                            apt.status === 'concluido'
+                              ? 'bg-emerald-50 text-emerald-800'
+                              : apt.status.startsWith('cancelado')
+                              ? 'bg-rose-50 text-rose-800'
+                              : 'bg-teal-50 text-teal-800'
+                          }`}
+                        >
+                          {apt.status === 'agendado'
+                            ? 'Agendado'
+                            : apt.status === 'concluido'
+                            ? 'Concluído'
+                            : 'Cancelado'}
+                        </span>
                       </div>
                       <div className="text-slate-500 mt-0.5">
-                        Data prevista: <strong className="text-slate-700">{apt.date.split('-').reverse().join('/')} às {apt.time}</strong> · Serviço: {serviceMap.get(apt.serviceId)?.name}
+                        Data prevista: <strong className="text-slate-700">{apt.date.split('-').reverse().join('/')} às {apt.time}</strong> · Serviço: {serviceMap.get(apt.serviceId)?.name} · R$ {apt.price.toFixed(2)}
                       </div>
                       {apt.cancellationReason && (
                         <div className="text-rose-700 mt-1 font-medium bg-rose-50 px-2 py-0.5 rounded inline-block">
@@ -787,22 +860,48 @@ export const ClinicAdmin: React.FC<ClinicAdminProps> = ({
                       )}
                     </div>
 
-                    <div className="text-right shrink-0">
-                      <span className="text-[11px] font-bold text-emerald-700 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded">
-                        ✓ Horário Liberado no Sistema
-                      </span>
-                      {apt.cancelledAt && (
-                        <div className="text-[10px] text-slate-400 mt-0.5 tabular-nums">
-                          Cancelado em: {new Date(apt.cancelledAt).toLocaleString('pt-BR')}
-                        </div>
-                      )}
+                    <div className="text-right shrink-0 flex items-center gap-2.5">
+                      <div>
+                        {apt.status.startsWith('cancelado') ? (
+                          <span className="text-[11px] font-bold text-emerald-700 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded">
+                            ✓ Horário Liberado
+                          </span>
+                        ) : apt.status === 'agendado' ? (
+                          <span className="text-[11px] font-bold text-teal-800 bg-teal-50 border border-teal-200 px-2 py-0.5 rounded">
+                            ● Horário Reservado
+                          </span>
+                        ) : (
+                          <span className="text-[11px] font-bold text-slate-700 bg-slate-100 border border-slate-200 px-2 py-0.5 rounded">
+                            ✓ Atendido
+                          </span>
+                        )}
+                        {apt.cancelledAt && (
+                          <div className="text-[10px] text-slate-400 mt-0.5 tabular-nums">
+                            Cancelado em: {new Date(apt.cancelledAt).toLocaleString('pt-BR')}
+                          </div>
+                        )}
+                      </div>
+
+                      {/* Delete from report & database button */}
+                      <button
+                        onClick={() => setDeletingApt(apt)}
+                        title="Excluir agendamento do relatório e do banco de dados definitivamente"
+                        className="inline-flex items-center gap-1 px-2.5 py-1.5 bg-rose-50 hover:bg-rose-100 text-rose-700 hover:text-rose-900 border border-rose-200 rounded-lg text-xs font-semibold transition-colors"
+                      >
+                        <Trash2 className="w-3.5 h-3.5 text-rose-600" />
+                        <span>Excluir do Relatório</span>
+                      </button>
                     </div>
                   </div>
                 ))}
 
-              {appointments.filter((a) => a.status.startsWith('cancelado')).length === 0 && (
+              {appointments.filter((a) => {
+                if (reportFilter === 'cancelados') return a.status.startsWith('cancelado');
+                if (reportFilter === 'agendados') return a.status === 'agendado';
+                return true;
+              }).length === 0 && (
                 <div className="py-6 text-center text-xs text-slate-400">
-                  Nenhum cancelamento registrado no histórico da clínica.
+                  Nenhum agendamento encontrado para este filtro de relatório.
                 </div>
               )}
             </div>
@@ -1015,6 +1114,7 @@ export const ClinicAdmin: React.FC<ClinicAdminProps> = ({
                   <div><strong>clinicName:</strong> "{settings.clinicName}"</div>
                   <div><strong>phone:</strong> "{settings.phone}"</div>
                   <div><strong>whatsapp:</strong> "{settings.whatsapp}"</div>
+                  <div><strong>email:</strong> "{settings.email}"</div>
                   <div><strong>address:</strong> "{settings.address}, {settings.city}"</div>
                   <div><strong>openHours:</strong> {settings.openHour}:00 às {settings.closeHour}:00</div>
                   <div><strong>securityPin:</strong> "****"</div>
@@ -1062,26 +1162,53 @@ export const ClinicAdmin: React.FC<ClinicAdminProps> = ({
                 <label className="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-1">
                   Telefone Fixo da Recepção
                 </label>
-                <input
-                  type="text"
-                  value={editPhone}
-                  onChange={(e) => setEditPhone(e.target.value)}
-                  className="w-full px-3 py-2 text-xs sm:text-sm rounded-xl border border-slate-300 focus:outline-teal-600 bg-white"
-                />
+                <div className="relative">
+                  <Phone className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+                  <input
+                    type="text"
+                    value={editPhone}
+                    onChange={(e) => setEditPhone(e.target.value)}
+                    placeholder="(11) 3456-7890"
+                    className="w-full pl-9 pr-3 py-2 text-xs sm:text-sm rounded-xl border border-slate-300 focus:outline-teal-600 bg-white"
+                  />
+                </div>
               </div>
 
               <div>
                 <label className="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-1">
                   WhatsApp da Clínica (com DDI 55)
                 </label>
+                <div className="relative">
+                  <MessageCircle className="w-4 h-4 text-emerald-600 absolute left-3 top-1/2 -translate-y-1/2" />
+                  <input
+                    type="text"
+                    value={editWhatsApp}
+                    onChange={(e) => setEditWhatsApp(e.target.value)}
+                    placeholder="5511987654321"
+                    className="w-full pl-9 pr-3 py-2 text-xs sm:text-sm rounded-xl border border-slate-300 focus:outline-teal-600 bg-white"
+                  />
+                </div>
+              </div>
+            </div>
+
+            <div>
+              <label className="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-1">
+                E-mail Oficial da Clínica / Recepção
+              </label>
+              <div className="relative">
+                <Mail className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
                 <input
-                  type="text"
-                  value={editWhatsApp}
-                  onChange={(e) => setEditWhatsApp(e.target.value)}
-                  placeholder="5511987654321"
-                  className="w-full px-3 py-2 text-xs sm:text-sm rounded-xl border border-slate-300 focus:outline-teal-600 bg-white"
+                  type="email"
+                  value={editEmail}
+                  onChange={(e) => setEditEmail(e.target.value)}
+                  placeholder="contato@podoclinica.med.br"
+                  className="w-full pl-9 pr-3 py-2 text-xs sm:text-sm rounded-xl border border-slate-300 focus:outline-teal-600 bg-white"
+                  required
                 />
               </div>
+              <span className="text-[11px] text-slate-400 block mt-1">
+                Utilizado para identificação oficial da clínica e remetente dos comprovantes enviados aos pacientes.
+              </span>
             </div>
 
             <div>
@@ -1110,6 +1237,48 @@ export const ClinicAdmin: React.FC<ClinicAdminProps> = ({
               <span className="text-[11px] text-slate-400 block mt-1">
                 Usado para desbloquear a janela restrita da clínica. Padrão: 1234.
               </span>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-1">
+                  Horário de Início dos Agendamentos (Hora)
+                </label>
+                <div className="relative">
+                  <Clock className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+                  <input
+                    type="number"
+                    min={6}
+                    max={12}
+                    value={editOpenHour}
+                    onChange={(e) => setEditOpenHour(Number(e.target.value))}
+                    className="w-full pl-9 pr-3 py-2 text-xs sm:text-sm rounded-xl border border-slate-300 focus:outline-teal-600 bg-white font-semibold"
+                  />
+                </div>
+                <span className="text-[11px] text-slate-400 block mt-1">
+                  Padrão configurado: 09:00
+                </span>
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-1">
+                  Horário de Término dos Agendamentos (Hora)
+                </label>
+                <div className="relative">
+                  <Clock className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+                  <input
+                    type="number"
+                    min={15}
+                    max={23}
+                    value={editCloseHour}
+                    onChange={(e) => setEditCloseHour(Number(e.target.value))}
+                    className="w-full pl-9 pr-3 py-2 text-xs sm:text-sm rounded-xl border border-slate-300 focus:outline-teal-600 bg-white font-semibold"
+                  />
+                </div>
+                <span className="text-[11px] text-slate-400 block mt-1">
+                  Padrão configurado: 19:00 (último atendimento)
+                </span>
+              </div>
             </div>
 
             <div className="pt-4 border-t border-slate-100 flex items-center justify-between">
@@ -1500,7 +1669,7 @@ export const ClinicAdmin: React.FC<ClinicAdminProps> = ({
             </p>
 
             <div className="p-3 bg-amber-50 border border-amber-200 rounded-xl text-xs text-amber-900">
-              ⚠️ <strong>Atenção:</strong> O registro será apagado do banco de dados na nuvem (Firestore) e o horário será liberado no sistema.
+              ⚠️ <strong>Atenção:</strong> O registro será apagado do banco de dados na nuvem (Firestore), removido da agenda e excluído definitivamente de todos os relatórios da clínica imediatamente.
             </div>
 
             <div className="flex items-center justify-end gap-3 pt-3 border-t border-slate-100">

@@ -101,7 +101,7 @@ export const INITIAL_SETTINGS: ClinicSettings = {
   address: 'Av. Paulista, 1200, Sala 804 - Bela Vista',
   city: 'São Paulo - SP',
   adminPin: '1234',
-  openHour: 8,
+  openHour: 9,
   closeHour: 19,
   slotIntervalMin: 60,
 };

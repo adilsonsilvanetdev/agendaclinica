@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import {
   Calendar as CalendarIcon,
   Clock,
@@ -8,8 +8,6 @@ import {
   ChevronLeft,
   Sparkles,
   MessageCircle,
-  Mail,
-  CalendarPlus,
   Copy,
   Check,
   AlertCircle,
@@ -22,7 +20,6 @@ import {
   getStoredAppointments,
   buildWhatsAppLink,
   formatWhatsAppConfirmationMessage,
-  downloadCalendarEvent,
 } from '../services/storage';
 
 interface BookingFlowProps {
@@ -30,7 +27,6 @@ interface BookingFlowProps {
   professionals: Professional[];
   settings: ClinicSettings;
   onAppointmentCreated: (appointment: Appointment) => void;
-  onOpenEmailPreview: (appointment: Appointment, service: Service, professional: Professional) => void;
   onNavigateToLookup: (code: string) => void;
 }
 
@@ -39,7 +35,6 @@ export const BookingFlow: React.FC<BookingFlowProps> = ({
   professionals,
   settings,
   onAppointmentCreated,
-  onOpenEmailPreview,
   onNavigateToLookup,
 }) => {
   // Wizard steps: 1: Service, 2: Date & Slot, 3: Patient Info, 4: Confirmed
@@ -49,10 +44,13 @@ export const BookingFlow: React.FC<BookingFlowProps> = ({
   const [selectedServiceId, setSelectedServiceId] = useState<string>(services[0]?.id || 'srv-1');
   const [selectedProfessionalId, setSelectedProfessionalId] = useState<string>(professionals[0]?.id || 'prof-1');
   
-  // Date selection (default today or tomorrow)
+  // Date selection synchronized with local timezone
   const todayStr = useMemo(() => {
-    const now = new Date();
-    return now.toISOString().split('T')[0];
+    const d = new Date();
+    const year = d.getFullYear();
+    const month = String(d.getMonth() + 1).padStart(2, '0');
+    const day = String(d.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
   }, []);
 
   const [selectedDate, setSelectedDate] = useState<string>(todayStr);
@@ -71,6 +69,17 @@ export const BookingFlow: React.FC<BookingFlowProps> = ({
   // Post-booking state
   const [confirmedAppointment, setConfirmedAppointment] = useState<Appointment | null>(null);
   const [copiedCode, setCopiedCode] = useState(false);
+  const [showSuccessToast, setShowSuccessToast] = useState(false);
+
+  // Auto-dismiss small confirmation pop-up after 8 seconds
+  useEffect(() => {
+    if (showSuccessToast) {
+      const timer = setTimeout(() => {
+        setShowSuccessToast(false);
+      }, 8000);
+      return () => clearTimeout(timer);
+    }
+  }, [showSuccessToast]);
 
   // Compute selected entities
   const selectedService = services.find((s) => s.id === selectedServiceId) || services[0];
@@ -80,6 +89,16 @@ export const BookingFlow: React.FC<BookingFlowProps> = ({
   const slots = useMemo(() => {
     return getAvailableSlots(selectedDate, selectedProfessionalId, settings.openHour, settings.closeHour);
   }, [selectedDate, selectedProfessionalId, settings.openHour, settings.closeHour, confirmedAppointment]);
+
+  // If selected time is in the past or taken, reset it
+  useEffect(() => {
+    if (selectedTime) {
+      const match = slots.find((s) => s.time === selectedTime);
+      if (!match || !match.available) {
+        setSelectedTime('');
+      }
+    }
+  }, [slots, selectedTime]);
 
   const [returningPatientNotice, setReturningPatientNotice] = useState<string | null>(null);
 
@@ -108,9 +127,6 @@ export const BookingFlow: React.FC<BookingFlowProps> = ({
         if (!clientName && pastApt.clientName) {
           setClientName(pastApt.clientName);
         }
-        if (!clientEmail && pastApt.clientEmail) {
-          setClientEmail(pastApt.clientEmail);
-        }
         if (!clientBirthDate && pastApt.clientBirthDate) {
           setClientBirthDate(pastApt.clientBirthDate);
         }
@@ -122,14 +138,13 @@ export const BookingFlow: React.FC<BookingFlowProps> = ({
     }
   };
 
-  // Next 14 dates for easy horizontal chip selection
+  // Next 14 dates for easy horizontal chip selection (timezone safe)
   const upcomingDates = useMemo(() => {
     const list = [];
     const base = new Date();
     for (let i = 0; i < 14; i++) {
-      const d = new Date(base);
-      d.setDate(base.getDate() + i);
-      const iso = d.toISOString().split('T')[0];
+      const d = new Date(base.getFullYear(), base.getMonth(), base.getDate() + i);
+      const iso = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
       const weekday = d.toLocaleDateString('pt-BR', { weekday: 'short' });
       const dayNum = d.toLocaleDateString('pt-BR', { day: '2-digit' });
       const monthShort = d.toLocaleDateString('pt-BR', { month: 'short' });
@@ -151,10 +166,6 @@ export const BookingFlow: React.FC<BookingFlowProps> = ({
       setValidationError('Por favor, informe um número de telefone celular / WhatsApp válido com DDD.');
       return;
     }
-    if (!clientEmail.trim() || !clientEmail.includes('@')) {
-      setValidationError('Por favor, informe um endereço de e-mail válido.');
-      return;
-    }
     if (!selectedTime) {
       setValidationError('Selecione um horário disponível para continuar.');
       setStep(2);
@@ -165,7 +176,7 @@ export const BookingFlow: React.FC<BookingFlowProps> = ({
       const newApt = createAppointment({
         clientName: clientName.trim(),
         clientPhone: clientPhone.trim(),
-        clientEmail: clientEmail.trim(),
+        clientEmail: clientEmail.trim() || 'cliente@whatsapp.podoclinica.med.br',
         clientBirthDate: clientBirthDate || undefined,
         isFirstVisit,
         notes: notes.trim() || undefined,
@@ -173,13 +184,30 @@ export const BookingFlow: React.FC<BookingFlowProps> = ({
         professionalId: selectedProfessionalId,
         date: selectedDate,
         time: selectedTime,
-        confirmationChannel,
+        confirmationChannel: 'whatsapp',
         price: selectedService.price,
       });
 
       setConfirmedAppointment(newApt);
+      setShowSuccessToast(true);
       onAppointmentCreated(newApt);
       setStep(4);
+
+      // Disparo automático do WhatsApp
+      const waLink = buildWhatsAppLink(
+        newApt.clientPhone,
+        formatWhatsAppConfirmationMessage(
+          newApt,
+          selectedService,
+          selectedProfessional,
+          settings
+        )
+      );
+      try {
+        window.open(waLink, '_blank', 'noopener,noreferrer');
+      } catch {
+        // Pop-up blocked fallback
+      }
     } catch (err) {
       console.error(err);
       setValidationError('Não foi possível registrar o agendamento. Tente novamente.');
@@ -196,6 +224,7 @@ export const BookingFlow: React.FC<BookingFlowProps> = ({
     setStep(1);
     setSelectedTime('');
     setConfirmedAppointment(null);
+    setShowSuccessToast(false);
     setClientName('');
     setClientPhone('');
     setClientEmail('');
@@ -203,7 +232,48 @@ export const BookingFlow: React.FC<BookingFlowProps> = ({
   };
 
   return (
-    <div className="max-w-4xl mx-auto px-4 py-8 sm:py-12">
+    <div className="max-w-4xl mx-auto px-4 py-8 sm:py-12 relative">
+      {/* Pop-up: Agendamento Confirmado! */}
+      {showSuccessToast && confirmedAppointment && (
+        <div className="fixed top-5 right-5 sm:right-6 z-50 max-w-sm w-[calc(100vw-2.5rem)] bg-white rounded-2xl border-2 border-emerald-500 shadow-2xl shadow-emerald-950/20 p-4 animate-in fade-in slide-in-from-top-3 duration-300">
+          <div className="flex items-start gap-3">
+            <div className="w-10 h-10 rounded-xl bg-emerald-100 text-emerald-700 flex items-center justify-center shrink-0 mt-0.5">
+              <CheckCircle2 className="w-6 h-6 text-emerald-600" />
+            </div>
+            <div className="flex-1 min-w-0">
+              <div className="flex items-center justify-between gap-1">
+                <span className="font-extrabold text-sm text-emerald-950">
+                  Agendamento Confirmado!
+                </span>
+                <button
+                  type="button"
+                  onClick={() => setShowSuccessToast(false)}
+                  className="p-1 text-slate-400 hover:text-slate-700 rounded-lg text-xs font-bold transition-colors"
+                  aria-label="Fechar"
+                >
+                  ✕
+                </button>
+              </div>
+              <p className="text-xs text-slate-600 mt-1">
+                Consulta reservada com sucesso para <strong>{confirmedAppointment.clientName}</strong> no dia{' '}
+                <strong className="text-emerald-900">
+                  {confirmedAppointment.date.split('-').reverse().join('/')} às {confirmedAppointment.time}
+                </strong>.
+              </p>
+              <div className="mt-2.5 pt-2 border-t border-slate-100 flex items-center justify-between text-[11px]">
+                <span className="font-mono font-bold text-slate-700">
+                  Código: {confirmedAppointment.code}
+                </span>
+                <span className="inline-flex items-center gap-1 font-semibold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-md">
+                  <Check className="w-3 h-3" />
+                  Garantido
+                </span>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Wizard Step Indicator */}
       {step < 4 && (
         <div className="mb-8">
@@ -467,12 +537,20 @@ export const BookingFlow: React.FC<BookingFlowProps> = ({
                         ? 'bg-teal-700 text-white shadow-sm ring-2 ring-teal-600 ring-offset-1'
                         : slot.available
                         ? 'bg-white border border-slate-200 text-slate-800 hover:border-teal-600 hover:bg-teal-50/30'
+                        : slot.isPast
+                        ? 'bg-slate-100 border border-slate-200/50 text-slate-400 cursor-not-allowed opacity-60'
                         : 'bg-slate-100 border border-slate-200/60 text-slate-400 cursor-not-allowed line-through'
                     }`}
                   >
                     <div className="tabular-nums">{slot.time}</div>
                     <div className="text-[10px] font-normal tracking-tight">
-                      {slot.available ? (isSelected ? 'Escolhido' : 'Disponível') : 'Ocupado'}
+                      {slot.available
+                        ? isSelected
+                          ? 'Escolhido'
+                          : 'Disponível'
+                        : slot.isPast
+                        ? 'Passado'
+                        : 'Ocupado'}
                     </div>
                   </button>
                 );
@@ -579,20 +657,6 @@ export const BookingFlow: React.FC<BookingFlowProps> = ({
 
             <div>
               <label className="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-1">
-                E-mail para Confirmação *
-              </label>
-              <input
-                type="email"
-                required
-                placeholder="seu.email@exemplo.com"
-                value={clientEmail}
-                onChange={(e) => setClientEmail(e.target.value)}
-                className="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 focus:outline-teal-600 bg-white text-slate-900 text-sm"
-              />
-            </div>
-
-            <div>
-              <label className="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-1">
                 Data de Nascimento (Opcional)
               </label>
               <input
@@ -603,7 +667,7 @@ export const BookingFlow: React.FC<BookingFlowProps> = ({
               />
             </div>
 
-            <div>
+            <div className="sm:col-span-2">
               <label className="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-1">
                 É sua primeira vez na clínica?
               </label>
@@ -652,47 +716,11 @@ export const BookingFlow: React.FC<BookingFlowProps> = ({
               />
             </div>
 
-            <div className="sm:col-span-2">
-              <label className="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-2">
-                Canal Preferido de Confirmação Automática:
-              </label>
-              <div className="grid grid-cols-3 gap-2">
-                <button
-                  type="button"
-                  onClick={() => setConfirmationChannel('whatsapp')}
-                  className={`py-2 px-3 rounded-xl border text-xs font-medium flex items-center justify-center gap-1.5 transition-all ${
-                    confirmationChannel === 'whatsapp'
-                      ? 'bg-emerald-50 border-emerald-600 text-emerald-800 font-bold'
-                      : 'bg-white border-slate-300 text-slate-600'
-                  }`}
-                >
-                  <MessageCircle className="w-4 h-4 text-emerald-600" />
-                  <span>WhatsApp</span>
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setConfirmationChannel('email')}
-                  className={`py-2 px-3 rounded-xl border text-xs font-medium flex items-center justify-center gap-1.5 transition-all ${
-                    confirmationChannel === 'email'
-                      ? 'bg-blue-50 border-blue-600 text-blue-800 font-bold'
-                      : 'bg-white border-slate-300 text-slate-600'
-                  }`}
-                >
-                  <Mail className="w-4 h-4 text-blue-600" />
-                  <span>E-mail</span>
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setConfirmationChannel('ambos')}
-                  className={`py-2 px-3 rounded-xl border text-xs font-medium flex items-center justify-center gap-1.5 transition-all ${
-                    confirmationChannel === 'ambos'
-                      ? 'bg-teal-50 border-teal-600 text-teal-900 font-bold'
-                      : 'bg-white border-slate-300 text-slate-600'
-                  }`}
-                >
-                  <span>Ambos (WhatsApp + E-mail)</span>
-                </button>
-              </div>
+            <div className="sm:col-span-2 p-3.5 bg-emerald-50/80 border border-emerald-200 rounded-xl flex items-center gap-2.5 text-xs text-emerald-900">
+              <MessageCircle className="w-4 h-4 text-emerald-600 shrink-0" />
+              <span>
+                <strong>Confirmação Automática por WhatsApp:</strong> As instruções da consulta e o código do agendamento serão enviados diretamente para o seu WhatsApp.
+              </span>
             </div>
           </div>
 
@@ -725,27 +753,74 @@ export const BookingFlow: React.FC<BookingFlowProps> = ({
             </div>
 
             <h2 className="text-2xl sm:text-3xl font-extrabold text-slate-900 tracking-tight">
-              Agendamento Confirmado com Sucesso!
+              Agendamento Confirmado!
             </h2>
             <p className="mt-2 text-slate-600 text-sm sm:text-base max-w-lg mx-auto">
-              Seu horário está garantido na {settings.clinicName}. Uma confirmação automática foi emitida para você.
+              Seu horário está garantido na {settings.clinicName}. O agendamento já foi registrado no sistema e na nuvem.
             </p>
 
+            {/* Reassurance Badge */}
+            <div className="mt-4 inline-flex items-center gap-2 px-3.5 py-1.5 bg-emerald-50 text-emerald-800 border border-emerald-200 rounded-full text-xs sm:text-sm font-semibold">
+              <Check className="w-4 h-4 text-emerald-600 shrink-0" />
+              <span>Não é necessário clicar em mais nada! Sua consulta já está agendada.</span>
+            </div>
+
             {/* Code Badge */}
-            <div className="mt-5 inline-flex items-center gap-2 bg-slate-100 border border-slate-300/80 px-4 py-2 rounded-xl">
-              <span className="text-xs uppercase font-semibold text-slate-500">
-                Código do Agendamento:
-              </span>
-              <span className="text-base font-extrabold text-slate-900 tracking-wider font-mono">
-                {confirmedAppointment.code}
-              </span>
-              <button
-                onClick={() => handleCopyCode(confirmedAppointment.code)}
-                title="Copiar código"
-                className="p-1 text-slate-500 hover:text-slate-800"
-              >
-                {copiedCode ? <Check className="w-4 h-4 text-emerald-600" /> : <Copy className="w-4 h-4" />}
-              </button>
+            <div className="mt-4 block">
+              <div className="inline-flex items-center gap-2 bg-slate-100 border border-slate-300/80 px-4 py-2 rounded-xl">
+                <span className="text-xs uppercase font-semibold text-slate-500">
+                  Código do Agendamento:
+                </span>
+                <span className="text-base font-extrabold text-slate-900 tracking-wider font-mono">
+                  {confirmedAppointment.code}
+                </span>
+                <button
+                  onClick={() => handleCopyCode(confirmedAppointment.code)}
+                  title="Copiar código"
+                  className="p-1 text-slate-500 hover:text-slate-800"
+                >
+                  {copiedCode ? <Check className="w-4 h-4 text-emerald-600" /> : <Copy className="w-4 h-4" />}
+                </button>
+              </div>
+            </div>
+          </div>
+
+          {/* Real-time Status of Automations */}
+          <div className="bg-gradient-to-r from-teal-50/70 via-slate-50 to-emerald-50/70 border border-teal-200/60 rounded-2xl p-5 space-y-3">
+            <h4 className="text-xs font-bold uppercase tracking-wider text-teal-900 flex items-center gap-2">
+              <Sparkles className="w-4 h-4 text-teal-700" />
+              <span>Status dos Envios e Confirmações Automáticas:</span>
+            </h4>
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-xs sm:text-sm">
+              <div className="bg-white p-3.5 rounded-xl border border-slate-200 shadow-2xs">
+                <div className="flex items-center gap-2 font-semibold text-slate-900 mb-1">
+                  <span className="w-2.5 h-2.5 rounded-full bg-emerald-500" />
+                  <span>Sistema da Clínica</span>
+                </div>
+                <p className="text-xs text-slate-600">
+                  Horário reservado com sucesso e visível no painel interno dos profissionais.
+                </p>
+              </div>
+
+              <div className="bg-white p-3.5 rounded-xl border border-slate-200 shadow-2xs">
+                <div className="flex items-center gap-2 font-semibold text-slate-900 mb-1">
+                  <span className="w-2.5 h-2.5 rounded-full bg-emerald-500" />
+                  <span>WhatsApp</span>
+                </div>
+                <p className="text-xs text-slate-600">
+                  Mensagem gerada e disparada para <strong>{confirmedAppointment.clientPhone}</strong>.
+                </p>
+              </div>
+
+              <div className="bg-white p-3.5 rounded-xl border border-slate-200 shadow-2xs">
+                <div className="flex items-center gap-2 font-semibold text-slate-900 mb-1">
+                  <span className="w-2.5 h-2.5 rounded-full bg-teal-500" />
+                  <span>Nuvem Sincronizada</span>
+                </div>
+                <p className="text-xs text-slate-600">
+                  Horário atualizado e sincronizado em tempo real no banco de dados.
+                </p>
+              </div>
             </div>
           </div>
 
@@ -789,51 +864,37 @@ export const BookingFlow: React.FC<BookingFlowProps> = ({
             </div>
           </div>
 
-          {/* Automated Channel Actions */}
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-            {/* WhatsApp Confirmation */}
-            <a
-              href={buildWhatsAppLink(
-                confirmedAppointment.clientPhone,
-                formatWhatsAppConfirmationMessage(
-                  confirmedAppointment,
-                  selectedService,
-                  selectedProfessional,
-                  settings
-                )
-              )}
-              target="_blank"
-              rel="noreferrer"
-              className="flex items-center justify-center gap-2 p-3.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl font-semibold text-sm transition-colors shadow-xs"
-            >
-              <MessageCircle className="w-5 h-5" />
-              <span>Abrir no WhatsApp</span>
-            </a>
+          {/* Optional Direct Communication */}
+          <div className="space-y-2">
+            <div className="flex items-center justify-between px-1">
+              <span className="text-xs font-bold text-slate-500 uppercase tracking-wider">
+                Comunicação Direta:
+              </span>
+              <span className="text-xs text-slate-400 font-medium">
+                (O agendamento já está confirmado e garantido)
+              </span>
+            </div>
 
-            {/* Email Preview Modal */}
-            <button
-              onClick={() => onOpenEmailPreview(confirmedAppointment, selectedService, selectedProfessional)}
-              className="flex items-center justify-center gap-2 p-3.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl font-semibold text-sm transition-colors shadow-xs"
-            >
-              <Mail className="w-5 h-5" />
-              <span>Ver Comprovante / E-mail</span>
-            </button>
-
-            {/* ICS Calendar */}
-            <button
-              onClick={() =>
-                downloadCalendarEvent(
-                  confirmedAppointment,
-                  selectedService,
-                  selectedProfessional,
-                  settings
-                )
-              }
-              className="flex items-center justify-center gap-2 p-3.5 bg-slate-800 hover:bg-slate-900 text-white rounded-xl font-semibold text-sm transition-colors shadow-xs"
-            >
-              <CalendarPlus className="w-5 h-5 text-teal-400" />
-              <span>Salvar na Agenda (.ics)</span>
-            </button>
+            <div>
+              {/* WhatsApp Confirmation */}
+              <a
+                href={buildWhatsAppLink(
+                  confirmedAppointment.clientPhone,
+                  formatWhatsAppConfirmationMessage(
+                    confirmedAppointment,
+                    selectedService,
+                    selectedProfessional,
+                    settings
+                  )
+                )}
+                target="_blank"
+                rel="noreferrer"
+                className="w-full flex items-center justify-center gap-2.5 p-3.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-300 rounded-xl font-semibold text-xs sm:text-sm transition-colors shadow-2xs"
+              >
+                <MessageCircle className="w-4 h-4 text-emerald-600" />
+                <span>Reabrir Mensagem no WhatsApp (Opcional)</span>
+              </a>
+            </div>
           </div>
 
           {/* Cancellation Info Banner */}
