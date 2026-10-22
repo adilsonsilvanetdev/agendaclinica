@@ -25,6 +25,7 @@ interface ClientAppointmentLookupProps {
   services: Service[];
   professionals: Professional[];
   settings: ClinicSettings;
+  appointments?: Appointment[];
   onNavigateToBooking: () => void;
   onAppointmentCancelled: (appointment: Appointment) => void;
 }
@@ -34,6 +35,7 @@ export const ClientAppointmentLookup: React.FC<ClientAppointmentLookupProps> = (
   services,
   professionals,
   settings,
+  appointments,
   onNavigateToBooking,
   onAppointmentCancelled,
 }) => {
@@ -55,7 +57,7 @@ export const ClientAppointmentLookup: React.FC<ClientAppointmentLookupProps> = (
     const term = searchTerm.trim().toUpperCase();
     const cleanDigits = searchTerm.replace(/\D/g, '');
 
-    const all = getStoredAppointments();
+    const all = appointments && appointments.length > 0 ? appointments : getStoredAppointments();
     const filtered = all.filter((apt) => {
       const matchCode = apt.code.toUpperCase() === term;
       const aptPhoneDigits = apt.clientPhone.replace(/\D/g, '');

@@ -47,23 +47,42 @@ export function initFirestoreListeners(
     aptsCol,
     async (snapshot) => {
       if (snapshot.empty) {
-        // Seed initial appointments into cloud database
-        const seeds = generateSeedAppointments();
-        for (const s of seeds) {
+        // Seed initial appointments or upload any existing local data into cloud database
+        const local = getStoredAppointments();
+        const toUpload = local && local.length > 0 ? local : generateSeedAppointments();
+        for (const s of toUpload) {
           try {
             await setDoc(doc(db, 'appointments', s.id), s);
           } catch (e) {
             handleFirestoreError(e, OperationType.WRITE, `appointments/${s.id}`);
           }
         }
-        inMemoryAppointments = seeds;
-        saveLocalAppointments(seeds);
-        onAppointmentsUpdate(seeds);
+        inMemoryAppointments = toUpload;
+        saveLocalAppointments(toUpload);
+        onAppointmentsUpdate(toUpload);
       } else {
         const loaded: Appointment[] = [];
         snapshot.forEach((d) => {
           loaded.push(d.data() as Appointment);
         });
+
+        // Automatically sync any appointments stored locally that aren't yet in Firestore
+        // (e.g. created offline or on PC before synchronization was finalized)
+        const localApts = getStoredAppointments();
+        const firestoreIds = new Set(loaded.map((a) => a.id));
+        const unsynced = localApts.filter((item) => !firestoreIds.has(item.id));
+
+        if (unsynced.length > 0) {
+          for (const item of unsynced) {
+            try {
+              await setDoc(doc(db, 'appointments', item.id), item);
+              loaded.push(item);
+            } catch (err) {
+              console.warn('Syncing unsynced local item to cloud:', err);
+            }
+          }
+        }
+
         // Sort by date & time
         loaded.sort((a, b) => `${b.date} ${b.time}`.localeCompare(`${a.date} ${a.time}`));
         inMemoryAppointments = loaded;
@@ -491,9 +510,12 @@ export function getAvailableSlots(
   dateStr: string,
   professionalId: string,
   openHour: number = 9,
-  closeHour: number = 19
+  closeHour: number = 19,
+  providedAppointments?: Appointment[]
 ): { time: string; available: boolean; isPast?: boolean; bookedBy?: string }[] {
-  const appointments = getStoredAppointments();
+  const appointments = providedAppointments && providedAppointments.length > 0
+    ? providedAppointments
+    : getStoredAppointments();
   const slots: { time: string; available: boolean; isPast?: boolean; bookedBy?: string }[] = [];
 
   // Determine current local date & time

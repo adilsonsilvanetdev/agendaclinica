@@ -26,6 +26,7 @@ interface BookingFlowProps {
   services: Service[];
   professionals: Professional[];
   settings: ClinicSettings;
+  appointments?: Appointment[];
   onAppointmentCreated: (appointment: Appointment) => void;
   onNavigateToLookup: (code: string) => void;
 }
@@ -34,6 +35,7 @@ export const BookingFlow: React.FC<BookingFlowProps> = ({
   services,
   professionals,
   settings,
+  appointments,
   onAppointmentCreated,
   onNavigateToLookup,
 }) => {
@@ -87,8 +89,8 @@ export const BookingFlow: React.FC<BookingFlowProps> = ({
 
   // Available slots for selected date & professional
   const slots = useMemo(() => {
-    return getAvailableSlots(selectedDate, selectedProfessionalId, settings.openHour, settings.closeHour);
-  }, [selectedDate, selectedProfessionalId, settings.openHour, settings.closeHour, confirmedAppointment]);
+    return getAvailableSlots(selectedDate, selectedProfessionalId, settings.openHour, settings.closeHour, appointments);
+  }, [selectedDate, selectedProfessionalId, settings.openHour, settings.closeHour, appointments, confirmedAppointment]);
 
   // If selected time is in the past or taken, reset it
   useEffect(() => {
@@ -102,6 +104,61 @@ export const BookingFlow: React.FC<BookingFlowProps> = ({
 
   const [returningPatientNotice, setReturningPatientNotice] = useState<string | null>(null);
 
+  // Comprehensive patient recognition helper across mobile and desktop
+  const checkReturningPatient = (rawPhone: string) => {
+    const digits = rawPhone.replace(/\D/g, '');
+    if (digits.length < 8) {
+      setReturningPatientNotice(null);
+      return;
+    }
+
+    const aptsList = appointments && appointments.length > 0 ? appointments : getStoredAppointments();
+    
+    // Look up patient by phone (exact match or suffix match with/without DDD)
+    const pastApt = aptsList.find((a) => {
+      const aptDigits = (a.clientPhone || '').replace(/\D/g, '');
+      if (!aptDigits) return false;
+      if (aptDigits === digits) return true;
+      if (digits.length >= 8 && aptDigits.length >= 8) {
+        if (digits.slice(-8) === aptDigits.slice(-8)) {
+          if (digits.length >= 9 && aptDigits.length >= 9) {
+            return digits.slice(-9) === aptDigits.slice(-9);
+          }
+          return true;
+        }
+      }
+      return false;
+    });
+
+    if (pastApt) {
+      setIsFirstVisit(false);
+      const cleanRef = pastApt.clientPhone.replace(/\D/g, '');
+      const pastVisitsCount = aptsList.filter((a) => {
+        const d = (a.clientPhone || '').replace(/\D/g, '');
+        return d === cleanRef || (d.length >= 8 && d.slice(-8) === cleanRef.slice(-8));
+      }).length;
+
+      setReturningPatientNotice(
+        `Identificamos seu cadastro! Seja bem-vindo(a) de volta para sua ${pastVisitsCount + 1}ª consulta.`
+      );
+      if (!clientName && pastApt.clientName) {
+        setClientName(pastApt.clientName);
+      }
+      if (!clientBirthDate && pastApt.clientBirthDate) {
+        setClientBirthDate(pastApt.clientBirthDate);
+      }
+    } else {
+      setReturningPatientNotice(null);
+    }
+  };
+
+  // Re-verify returning patient when phone or cloud appointments update (handles mobile autofill)
+  useEffect(() => {
+    if (clientPhone.replace(/\D/g, '').length >= 8) {
+      checkReturningPatient(clientPhone);
+    }
+  }, [clientPhone, appointments]);
+
   // Phone masking helper & automatic recognition of returning patient
   const handlePhoneChange = (val: string) => {
     const digits = val.replace(/\D/g, '').slice(0, 11);
@@ -113,29 +170,7 @@ export const BookingFlow: React.FC<BookingFlowProps> = ({
       formatted = `(${digits.slice(0, 2)}) ${digits.slice(2, 7)}-${digits.slice(7)}`;
     }
     setClientPhone(formatted);
-
-    // Auto-detect returning patient if phone has 10 or 11 digits
-    if (digits.length >= 10) {
-      const allApts = getStoredAppointments();
-      const pastApt = allApts.find((a) => a.clientPhone.replace(/\D/g, '') === digits);
-      if (pastApt) {
-        setIsFirstVisit(false);
-        const pastVisitsCount = allApts.filter((a) => a.clientPhone.replace(/\D/g, '') === digits).length;
-        setReturningPatientNotice(
-          `Identificamos seu cadastro! Seja bem-vindo(a) de volta para sua ${pastVisitsCount + 1}ª consulta.`
-        );
-        if (!clientName && pastApt.clientName) {
-          setClientName(pastApt.clientName);
-        }
-        if (!clientBirthDate && pastApt.clientBirthDate) {
-          setClientBirthDate(pastApt.clientBirthDate);
-        }
-      } else {
-        setReturningPatientNotice(null);
-      }
-    } else {
-      setReturningPatientNotice(null);
-    }
+    checkReturningPatient(formatted);
   };
 
   // Next 14 dates for easy horizontal chip selection (timezone safe)

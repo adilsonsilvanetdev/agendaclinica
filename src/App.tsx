@@ -180,6 +180,7 @@ export default function App() {
             services={services}
             professionals={professionals}
             settings={settings}
+            appointments={appointments}
             onAppointmentCreated={handleAppointmentCreated}
             onNavigateToLookup={handleNavigateToLookup}
           />
@@ -191,6 +192,7 @@ export default function App() {
             services={services}
             professionals={professionals}
             settings={settings}
+            appointments={appointments}
             onNavigateToBooking={() => setCurrentTab('agendamento')}
             onAppointmentCancelled={handleAppointmentCancelled}
           />

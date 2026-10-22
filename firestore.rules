@@ -3,11 +3,6 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
 
-    // Default deny for unmapped paths
-    match /{document=**} {
-      allow read, write: if false;
-    }
-
     // Helper functions
     function isValidId(id) {
       return id is string && id.size() > 0 && id.size() <= 128;
@@ -18,9 +13,10 @@ service cloud.firestore {
     }
 
     // Appointments Collection
-    // Allows public creation by clients (scheduling) and consultation/cancellation
+    // Allows public creation by clients (scheduling), listing, consultation and cancellation
     match /appointments/{appointmentId} {
-      allow read: if isValidId(appointmentId);
+      allow get: if isValidId(appointmentId);
+      allow list: if true;
       
       allow create: if isValidId(appointmentId)
         && incoming().code is string
@@ -41,7 +37,8 @@ service cloud.firestore {
     // Notifications Collection
     // Clinic notifications for new bookings and immediate cancellations
     match /notifications/{notificationId} {
-      allow read: if isValidId(notificationId);
+      allow get: if isValidId(notificationId);
+      allow list: if true;
       
       allow create: if isValidId(notificationId)
         && incoming().type in ['cancelamento_cliente', 'novo_agendamento', 'horario_liberado']
@@ -49,13 +46,19 @@ service cloud.firestore {
 
       allow update: if isValidId(notificationId);
       
-      allow delete: if false;
+      allow delete: if isValidId(notificationId);
     }
 
     // Settings Collection
     match /settings/{settingsId} {
-      allow read: if isValidId(settingsId);
+      allow get: if isValidId(settingsId);
+      allow list: if true;
       allow write: if isValidId(settingsId);
+    }
+
+    // Default deny for unmapped paths
+    match /{document=**} {
+      allow read, write: if false;
     }
   }
 }
