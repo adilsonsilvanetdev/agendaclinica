@@ -481,52 +481,34 @@ export const BookingFlow: React.FC<BookingFlowProps> = ({
 
           <div>
             <h2 className="text-xl sm:text-2xl font-bold text-slate-900">
-              Escolha o Especialista e o Horário
+              Escolha a Data e o Horário
             </h2>
             <p className="text-xs sm:text-sm text-slate-600 mt-1">
               Os horários são sincronizados em tempo real com a agenda da clínica.
             </p>
           </div>
 
-          {/* Professional Selector */}
-          <div>
-            <label className="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-2">
-              Profissional de Podologia
-            </label>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-              {professionals.map((prof) => {
-                const isSelected = selectedProfessionalId === prof.id;
-                return (
-                  <div
-                    key={prof.id}
-                    onClick={() => {
-                      setSelectedProfessionalId(prof.id);
-                      setSelectedTime(''); // reset slot when changing specialist
-                    }}
-                    className={`p-3.5 rounded-xl border flex items-center gap-3 cursor-pointer transition-all ${
-                      isSelected
-                        ? 'border-teal-600 bg-teal-50/50 ring-1 ring-teal-600'
-                        : 'border-slate-200 bg-white hover:border-slate-300'
-                    }`}
-                  >
-                    <img
-                      src={prof.avatar}
-                      alt={prof.name}
-                      referrerPolicy="no-referrer"
-                      className="w-12 h-12 rounded-full object-cover shrink-0 border border-slate-200"
-                      onError={(e) => {
-                        (e.currentTarget as HTMLImageElement).src =
-                          'https://images.unsplash.com/photo-1594824813583-4a1705e49c71?w=150&auto=format&fit=crop&q=80';
-                      }}
-                    />
-                    <div className="min-w-0 flex-1">
-                      <div className="text-sm font-bold text-slate-900 truncate">{prof.name}</div>
-                      <div className="text-xs text-teal-800 font-medium truncate">{prof.role}</div>
-                      <div className="text-[11px] text-slate-400">{prof.registry}</div>
-                    </div>
-                  </div>
-                );
-              })}
+          {/* Professional Card (Dra. Laura Mendes) */}
+          <div className="p-4 rounded-2xl border border-teal-200 bg-teal-50/60 flex items-center gap-3.5 shadow-2xs">
+            <img
+              src={selectedProfessional.avatar}
+              alt={selectedProfessional.name}
+              referrerPolicy="no-referrer"
+              className="w-14 h-14 rounded-2xl object-cover shrink-0 border-2 border-teal-600 shadow-xs"
+              onError={(e) => {
+                (e.currentTarget as HTMLImageElement).src =
+                  'https://images.unsplash.com/photo-1594824813583-4a1705e49c71?w=150&auto=format&fit=crop&q=80';
+              }}
+            />
+            <div className="min-w-0 flex-1">
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="text-sm sm:text-base font-bold text-slate-900">{selectedProfessional.name}</span>
+                <span className="text-[10px] font-bold text-teal-800 bg-white px-2 py-0.5 rounded-md border border-teal-200">
+                  Podóloga Responsável
+                </span>
+              </div>
+              <div className="text-xs text-teal-900 font-semibold mt-0.5">{selectedProfessional.role}</div>
+              <div className="text-[11px] text-slate-500 mt-0.5">{selectedProfessional.registry} · {selectedProfessional.bio}</div>
             </div>
           </div>
 
