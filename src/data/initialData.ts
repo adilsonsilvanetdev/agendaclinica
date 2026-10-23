@@ -7,7 +7,7 @@ export const INITIAL_SERVICES: Service[] = [
     name: 'Podologia Tradicional Completa',
     category: 'Geral',
     description: 'Higienização profunda, corte anatômico de unhas, desbaste de calosidades plantares, lixamento e massagem relaxante com creme emoliente.',
-    durationMin: 50,
+    durationMin: 90,
     price: 130,
     recommendedIntervalDays: 30,
     popular: true,
@@ -17,7 +17,7 @@ export const INITIAL_SERVICES: Service[] = [
     name: 'Tratamento de Unha Encravada (Onicocriptose)',
     category: 'Especializada',
     description: 'Alívio imediato da dor, desobstrução técnica e indolor da espícula, assepsia, curativo bactericida oclusivo e plano de cicatrização.',
-    durationMin: 45,
+    durationMin: 90,
     price: 150,
     popular: true,
   },
@@ -26,7 +26,7 @@ export const INITIAL_SERVICES: Service[] = [
     name: 'Remoção de Calos e Fissuras (Rachaduras)',
     category: 'Preventiva',
     description: 'Tratamento intensivo para fissuras no calcanhar e calos profundos dolorosos com emoliência térmica e regeneração cutânea.',
-    durationMin: 40,
+    durationMin: 90,
     price: 110,
   },
   {
@@ -34,7 +34,7 @@ export const INITIAL_SERVICES: Service[] = [
     name: 'Podogeriatria (Pé Diabético e Terceira Idade)',
     category: 'Especializada',
     description: 'Protocolo de segurança máxima para diabéticos e idosos, prevenindo lesões, com avaliação de sensibilidade e hidratação medicinal.',
-    durationMin: 50,
+    durationMin: 90,
     price: 140,
     popular: true,
   },
@@ -43,7 +43,7 @@ export const INITIAL_SERVICES: Service[] = [
     name: 'Laserterapia Podológica (Micose / Onicomicose)',
     category: 'Terapêutica',
     description: 'Aplicação de laser terapêutico de baixa intensidade para combate a fungos nas unhas e alívio de processos inflamatórios.',
-    durationMin: 40,
+    durationMin: 90,
     price: 160,
   },
   {
@@ -51,7 +51,7 @@ export const INITIAL_SERVICES: Service[] = [
     name: 'Aplicação de Órtese Corretiva (FHO / Metálica)',
     category: 'Especializada',
     description: 'Instalação de mola ou fita acrílica de tração molecular para corrigir unhas com curvatura excessiva e evitar novas encravações.',
-    durationMin: 45,
+    durationMin: 90,
     price: 135,
   },
   {
@@ -59,7 +59,7 @@ export const INITIAL_SERVICES: Service[] = [
     name: 'Podopediatria (Podologia Infantil)',
     category: 'Preventiva',
     description: 'Atendimento lúdico e afetuoso para crianças e bebês, correção precoce do corte de unhas e prevenção de deformidades ungueais.',
-    durationMin: 40,
+    durationMin: 90,
     price: 120,
   },
   {
@@ -67,7 +67,7 @@ export const INITIAL_SERVICES: Service[] = [
     name: 'Reflexologia Podal Terapêutica',
     category: 'Terapêutica',
     description: 'Pressoterapia em pontos reflexos neurais dos pés para alívio de estresse, melhora na circulação sanguínea e relaxamento integral.',
-    durationMin: 45,
+    durationMin: 90,
     price: 125,
   },
 ];
@@ -85,10 +85,10 @@ export const INITIAL_PROFESSIONALS: Professional[] = [
 ];
 
 export const INITIAL_SETTINGS: ClinicSettings = {
-  clinicName: 'PodoClínica Especializada',
+  clinicName: 'Clau Podologia',
   phone: '(11) 3456-7890',
   whatsapp: '5511987654321',
-  email: 'contato@podoclinica.med.br',
+  email: 'contato@claupodologia.com.br',
   address: 'Av. Paulista, 1200, Sala 804 - Bela Vista',
   city: 'São Paulo - SP',
   adminPin: '1234',

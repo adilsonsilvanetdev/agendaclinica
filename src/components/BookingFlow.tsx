@@ -20,6 +20,7 @@ import {
   getStoredAppointments,
   buildWhatsAppLink,
   formatWhatsAppConfirmationMessage,
+  formatWhatsAppBookingNoticeForClinic,
   calculateEndTime,
   AvailableSlot,
 } from '../services/storage';
@@ -249,10 +250,10 @@ export const BookingFlow: React.FC<BookingFlowProps> = ({
       onAppointmentCreated(newApt);
       setStep(4);
 
-      // Disparo automático do WhatsApp
+      // Disparo automático de notificação para o WhatsApp da Clínica
       const waLink = buildWhatsAppLink(
-        newApt.clientPhone,
-        formatWhatsAppConfirmationMessage(
+        settings.whatsapp,
+        formatWhatsAppBookingNoticeForClinic(
           newApt,
           selectedService,
           selectedProfessional,
@@ -963,19 +964,19 @@ export const BookingFlow: React.FC<BookingFlowProps> = ({
           <div className="space-y-2">
             <div className="flex items-center justify-between px-1">
               <span className="text-xs font-bold text-slate-500 uppercase tracking-wider">
-                Comunicação Direta:
+                Comunicação com a Clínica:
               </span>
               <span className="text-xs text-slate-400 font-medium">
-                (O agendamento já está confirmado e garantido)
+                (O agendamento já está confirmado no sistema)
               </span>
             </div>
 
             <div>
-              {/* WhatsApp Confirmation */}
+              {/* WhatsApp Confirmation to Clinic */}
               <a
                 href={buildWhatsAppLink(
-                  confirmedAppointment.clientPhone,
-                  formatWhatsAppConfirmationMessage(
+                  settings.whatsapp,
+                  formatWhatsAppBookingNoticeForClinic(
                     confirmedAppointment,
                     selectedService,
                     selectedProfessional,
@@ -984,10 +985,10 @@ export const BookingFlow: React.FC<BookingFlowProps> = ({
                 )}
                 target="_blank"
                 rel="noreferrer"
-                className="w-full flex items-center justify-center gap-2.5 p-3.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-300 rounded-xl font-semibold text-xs sm:text-sm transition-colors shadow-2xs"
+                className="w-full flex items-center justify-center gap-2.5 p-3.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl font-semibold text-xs sm:text-sm transition-colors shadow-sm"
               >
-                <MessageCircle className="w-4 h-4 text-emerald-600" />
-                <span>Reabrir Mensagem no WhatsApp (Opcional)</span>
+                <MessageCircle className="w-4 h-4 text-white" />
+                <span>Enviar Confirmação para o WhatsApp da Clínica</span>
               </a>
             </div>
           </div>

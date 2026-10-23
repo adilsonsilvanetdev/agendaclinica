@@ -63,7 +63,7 @@ export const Header: React.FC<HeaderProps> = ({
             </div>
             <div>
               <span className="text-lg font-bold tracking-tight text-slate-900 group-hover:text-teal-700 transition-colors block leading-tight">
-                PodoClínica
+                {settings.clinicName || 'Clau Podologia'}
               </span>
               <span className="text-xs text-slate-500 font-medium hidden sm:block">
                 Podologia Avançada & Laser

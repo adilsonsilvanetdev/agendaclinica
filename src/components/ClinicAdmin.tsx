@@ -35,6 +35,7 @@ import {
   deleteAppointment,
   exportAppointmentsToCSV,
   buildWhatsAppLink,
+  formatWhatsAppConfirmationMessage,
   saveStoredSettings,
   createAppointment,
   resetDemoData,
@@ -225,13 +226,13 @@ export const ClinicAdmin: React.FC<ClinicAdminProps> = ({
     if (!newClientName || !newClientPhone) return;
 
     const srv = serviceMap.get(newServiceId);
-    const duration = srv?.durationMin || 50;
+    const duration = srv?.durationMin || 90;
     const calculatedEndTime = calculateEndTime(newTime, duration);
 
-    createAppointment({
+    const newApt = createAppointment({
       clientName: newClientName,
       clientPhone: newClientPhone,
-      clientEmail: newClientEmail || 'atendimento@podoclinica.med.br',
+      clientEmail: newClientEmail || 'atendimento@claupodologia.com.br',
       isFirstVisit: false,
       notes: newNotes,
       serviceId: newServiceId,
@@ -243,6 +244,19 @@ export const ClinicAdmin: React.FC<ClinicAdminProps> = ({
       confirmationChannel: 'whatsapp',
       price: srv?.price || 130,
     });
+
+    const prof = profMap.get(newProfId) || professionals[0];
+    if (newApt && srv && prof) {
+      const waLink = buildWhatsAppLink(
+        newApt.clientPhone,
+        formatWhatsAppConfirmationMessage(newApt, srv, prof, settings)
+      );
+      try {
+        window.open(waLink, '_blank', 'noopener,noreferrer');
+      } catch {
+        // popup fallback
+      }
+    }
 
     setIsAddingNew(false);
     setNewClientName('');
@@ -596,10 +610,10 @@ export const ClinicAdmin: React.FC<ClinicAdminProps> = ({
                         <td className="py-3 px-4 whitespace-nowrap">
                           <div className="font-mono font-bold text-slate-900">{apt.code}</div>
                           <div className="text-xs text-teal-800 font-semibold tabular-nums">
-                            {apt.date.split('-').reverse().join('/')} das {apt.time} às {apt.endTime || calculateEndTime(apt.time, apt.durationMin || srv?.durationMin || 50)}
+                            {apt.date.split('-').reverse().join('/')} das {apt.time} às {apt.endTime || calculateEndTime(apt.time, apt.durationMin || srv?.durationMin || 90)}
                           </div>
                           <div className="text-[10px] text-slate-400">
-                            {apt.durationMin || srv?.durationMin || 50} minutos
+                            {apt.durationMin || srv?.durationMin || 90} minutos
                           </div>
                         </td>
 
@@ -707,16 +721,28 @@ export const ClinicAdmin: React.FC<ClinicAdminProps> = ({
                               </button>
                             )}
 
-                            {/* WhatsApp reminder */}
+                            {/* WhatsApp reminder / confirmation */}
                             <a
                               href={buildWhatsAppLink(
                                 apt.clientPhone,
-                                `Olá, ${apt.clientName}! Lembramos do seu agendamento de podologia na ${settings.clinicName} dia ${apt.date.split('-').reverse().join('/')} às ${apt.time}. Código: ${apt.code}. Até breve!`
+                                formatWhatsAppConfirmationMessage(
+                                  apt,
+                                  serviceMap.get(apt.serviceId) || {
+                                    id: apt.serviceId,
+                                    name: 'Tratamento Podológico',
+                                    category: 'Geral',
+                                    description: '',
+                                    durationMin: apt.durationMin || 90,
+                                    price: apt.price,
+                                  },
+                                  profMap.get(apt.professionalId) || professionals[0],
+                                  settings
+                                )
                               )}
                               target="_blank"
                               rel="noreferrer"
-                              title="Enviar Lembrete no WhatsApp"
-                              className="p-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg transition-colors"
+                              title="Enviar Confirmação de Agendamento no WhatsApp do Paciente"
+                              className="p-1.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 rounded-lg transition-colors border border-emerald-200"
                             >
                               <MessageCircle className="w-3.5 h-3.5 text-emerald-600" />
                             </a>
@@ -1436,14 +1462,26 @@ export const ClinicAdmin: React.FC<ClinicAdminProps> = ({
               <a
                 href={buildWhatsAppLink(
                   viewingAppointment.clientPhone,
-                  `Olá, ${viewingAppointment.clientName}! Equipe da ${settings.clinicName} falando a respeito do seu agendamento ${viewingAppointment.code}.`
+                  formatWhatsAppConfirmationMessage(
+                    viewingAppointment,
+                    serviceMap.get(viewingAppointment.serviceId) || {
+                      id: viewingAppointment.serviceId,
+                      name: 'Tratamento Podológico',
+                      category: 'Geral',
+                      description: '',
+                      durationMin: viewingAppointment.durationMin || 90,
+                      price: viewingAppointment.price,
+                    },
+                    profMap.get(viewingAppointment.professionalId) || professionals[0],
+                    settings
+                  )
                 )}
                 target="_blank"
                 rel="noreferrer"
-                className="px-3.5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-semibold flex items-center gap-1.5"
+                className="px-3.5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-semibold flex items-center gap-1.5 transition-colors shadow-2xs"
               >
                 <MessageCircle className="w-3.5 h-3.5" />
-                <span>WhatsApp</span>
+                <span>Enviar Confirmação no WhatsApp</span>
               </a>
 
               <div className="flex items-center gap-2">
@@ -1615,8 +1653,8 @@ export const ClinicAdmin: React.FC<ClinicAdminProps> = ({
 
               {/* Calculated duration & end time notice */}
               <div className="p-2.5 bg-teal-50 border border-teal-200 rounded-xl text-xs text-teal-950 flex items-center justify-between">
-                <span>Duração do tratamento: <strong>{serviceMap.get(newServiceId)?.durationMin || 50} min</strong></span>
-                <span>Término previsto: <strong>{calculateEndTime(newTime, serviceMap.get(newServiceId)?.durationMin || 50)}</strong></span>
+                <span>Duração do tratamento: <strong>{serviceMap.get(newServiceId)?.durationMin || 90} min</strong></span>
+                <span>Término previsto: <strong>{calculateEndTime(newTime, serviceMap.get(newServiceId)?.durationMin || 90)}</strong></span>
               </div>
 
               <div>

@@ -196,6 +196,10 @@ export function getStoredSettings(): ClinicSettings {
       return {
         ...INITIAL_SETTINGS,
         ...parsed,
+        clinicName:
+          !parsed.clinicName || parsed.clinicName === 'PodoClínica Especializada'
+            ? 'Clau Podologia'
+            : parsed.clinicName,
         openHour: parsed.openHour === 8 ? 9 : (parsed.openHour || 9),
         closeHour: parsed.closeHour || 19,
         email: parsed.email || INITIAL_SETTINGS.email,
@@ -208,6 +212,10 @@ export function getStoredSettings(): ClinicSettings {
     ? {
         ...INITIAL_SETTINGS,
         ...inMemorySettings,
+        clinicName:
+          !inMemorySettings.clinicName || inMemorySettings.clinicName === 'PodoClínica Especializada'
+            ? 'Clau Podologia'
+            : inMemorySettings.clinicName,
         openHour: inMemorySettings.openHour === 8 ? 9 : (inMemorySettings.openHour || 9),
         closeHour: inMemorySettings.closeHour || 19,
         email: inMemorySettings.email || INITIAL_SETTINGS.email,
@@ -318,7 +326,7 @@ export function createAppointment(
 ): Appointment {
   const services = INITIAL_SERVICES;
   const service = services.find((s) => s.id === data.serviceId);
-  const duration = service ? service.durationMin : (data.durationMin || 50);
+  const duration = service ? service.durationMin : (data.durationMin || 90);
   const calculatedEnd = data.endTime || calculateEndTime(data.time, duration);
 
   const newAppointment: Appointment = {
@@ -600,14 +608,19 @@ export function getAvailableSlots(
     (a) =>
       a.date === dateStr &&
       a.professionalId === professionalId &&
-      a.status === 'agendado'
+      a.status === 'agendado' &&
+      !isAppointmentDeleted(a.id)
   );
 
   // Map each active appointment to its busy [startMin, endMin) interval
   const busyIntervals = activeApts.map((a) => {
     const startMin = timeToMinutes(a.time);
-    const dur = a.durationMin || (INITIAL_SERVICES.find((s) => s.id === a.serviceId)?.durationMin || 50);
-    const endMin = a.endTime ? timeToMinutes(a.endTime) : (startMin + dur);
+    const srv = INITIAL_SERVICES.find((s) => s.id === a.serviceId);
+    const dur = srv ? srv.durationMin : (a.durationMin || 90);
+    const calculatedDuration = Math.max(dur, a.durationMin || 90);
+    const endMin = a.endTime && (timeToMinutes(a.endTime) - startMin >= calculatedDuration)
+      ? timeToMinutes(a.endTime)
+      : (startMin + calculatedDuration);
     return {
       appointment: a,
       startMin,
@@ -616,15 +629,16 @@ export function getAvailableSlots(
   });
 
   // Candidate start minutes:
-  // 1. Regular 30-minute intervals from openHour to closeHour
-  // 2. Exact end times of existing appointments (e.g. 09:50) so appointments can immediately follow
+  // 1. Regular 30-minute intervals covering the full operating day
+  // (e.g. 09:00, 09:30, ..., 18:30 when closing at 19:00)
   const candidateSet = new Set<number>();
-  for (let m = openMinutes; m <= closeMinutes - serviceDurationMin; m += 30) {
+  for (let m = openMinutes; m <= closeMinutes - 30; m += 30) {
     candidateSet.add(m);
   }
 
+  // 2. Exact end times of existing appointments so slots can follow immediately
   for (const interval of busyIntervals) {
-    if (interval.endMin >= openMinutes && interval.endMin + serviceDurationMin <= closeMinutes) {
+    if (interval.endMin >= openMinutes && interval.endMin <= closeMinutes - 30) {
       candidateSet.add(interval.endMin);
     }
   }
@@ -640,12 +654,54 @@ export function getAvailableSlots(
     // Past slot if whole date is in the past, or if today and start is before current time
     const isPast = isPastDate || (isToday && startMin <= currentMinutesToday);
 
-    // Collision check: intervals [candStart, candEnd) and [busyStart, busyEnd) overlap if candStart < busyEnd and candEnd > busyStart
-    const collision = busyIntervals.find(
+    // 1. Check if startMin falls inside an ongoing booked appointment
+    const insideAppointment = busyIntervals.find(
+      (b) => startMin >= b.startMin && startMin < b.endMin
+    );
+
+    // 2. Find the closest booked appointment that starts AFTER startMin
+    const upcomingAppointments = busyIntervals
+      .filter((b) => b.startMin > startMin)
+      .sort((a, b) => a.startMin - b.startMin);
+    const nextBusy = upcomingAppointments[0];
+
+    // Gap in minutes from startMin to the next booked appointment:
+    // If free gap is less than the required treatment duration (90 min), mark as occupied!
+    const gapToNext = nextBusy ? nextBusy.startMin - startMin : Infinity;
+    const hasInsufficientGapBeforeNext = nextBusy !== undefined && gapToNext < serviceDurationMin;
+
+    // 3. Overlap check with any booked appointment interval:
+    const overlappingAppointment = busyIntervals.find(
       (b) => startMin < b.endMin && endMin > b.startMin
     );
 
-    const available = !isPast && !collision && endMin <= closeMinutes;
+    // 4. Check if remaining time until clinic closing is less than treatment duration
+    const minutesUntilClose = closeMinutes - startMin;
+    const hasInsufficientTimeUntilClose = endMin > closeMinutes;
+
+    let available = false;
+    let bookedBy: string | undefined = undefined;
+    let collisionReason: string | undefined = undefined;
+
+    if (insideAppointment) {
+      available = false;
+      bookedBy = insideAppointment.appointment.clientName;
+      collisionReason = `Ocupado (${insideAppointment.appointment.time} às ${minutesToTime(insideAppointment.endMin)})`;
+    } else if (hasInsufficientGapBeforeNext && nextBusy) {
+      // Se agendou um horário e ficou livre algum horário antes que seja menor aos 90 minutos do próximo, colocar ocupado
+      available = false;
+      bookedBy = nextBusy.appointment.clientName;
+      collisionReason = `Ocupado (intervalo livre de ${gapToNext} min antes das ${nextBusy.appointment.time} - requer ${serviceDurationMin} min)`;
+    } else if (overlappingAppointment) {
+      available = false;
+      bookedBy = overlappingAppointment.appointment.clientName;
+      collisionReason = `Ocupado (${overlappingAppointment.appointment.time} às ${minutesToTime(overlappingAppointment.endMin)})`;
+    } else if (hasInsufficientTimeUntilClose) {
+      available = false;
+      collisionReason = `Ocupado (apenas ${minutesUntilClose} min até o encerramento às ${minutesToTime(closeMinutes)} - requer ${serviceDurationMin} min)`;
+    } else if (!isPast) {
+      available = true;
+    }
 
     slots.push({
       time: timeStr,
@@ -653,10 +709,8 @@ export function getAvailableSlots(
       durationMin: serviceDurationMin,
       available,
       isPast,
-      bookedBy: collision ? collision.appointment.clientName : undefined,
-      collisionReason: collision
-        ? `Ocupado (${collision.appointment.time} às ${minutesToTime(collision.endMin)})`
-        : undefined,
+      bookedBy,
+      collisionReason,
     });
   }
 
@@ -670,6 +724,37 @@ export function buildWhatsAppLink(phone: string, text: string): string {
   return `https://wa.me/${cleanPhone.startsWith('55') ? cleanPhone : `55${cleanPhone}`}?text=${encodedText}`;
 }
 
+// Formato enviado para o WhatsApp da Clínica quando o paciente agenda pelo site
+export function formatWhatsAppBookingNoticeForClinic(
+  appointment: Appointment,
+  service: Service,
+  professional: Professional,
+  settings: ClinicSettings
+): string {
+  const [year, month, day] = appointment.date.split('-');
+  const dateFormatted = `${day}/${month}/${year}`;
+  const endTime = appointment.endTime || calculateEndTime(appointment.time, service.durationMin);
+  const clinicName = settings.clinicName || 'Clau Podologia';
+  const profName = professional?.name || 'Dra. Laura Mendes';
+  const fullAddress = `${settings.address || 'Av. Paulista, 1200, Sala 804 - Bela Vista'}, ${settings.city || 'São Paulo - SP'}`;
+
+  return (
+    `Confirmação de Agendamento - ${clinicName}\n\n` +
+    `Paciente: ${appointment.clientName}\n` +
+    `📞 Contato: ${appointment.clientPhone}\n\n` +
+    `📅 Data: ${dateFormatted}\n` +
+    `⏰ Horário: ${appointment.time} às ${endTime} (${service.durationMin} min)\n` +
+    `🩺 Tratamento: ${service.name}\n` +
+    `👩‍⚕️ Especialista: ${profName}\n` +
+    `💰 Valor: R$ ${appointment.price.toFixed(2)}\n` +
+    `📍 Local: ${fullAddress}\n` +
+    `🔖 Código do Agendamento: ${appointment.code}\n` +
+    (appointment.notes ? `📝 Observações: ${appointment.notes}\n` : '') +
+    `\nCaso precise remarcar ou cancelar com antecedência, avise-nos por aqui ou acesse nosso site informando seu código. Até breve!`
+  );
+}
+
+// Formato padrão enviado para o WhatsApp do Paciente (quando a clínica agenda ou envia confirmação)
 export function formatWhatsAppConfirmationMessage(
   appointment: Appointment,
   service: Service,
@@ -679,18 +764,22 @@ export function formatWhatsAppConfirmationMessage(
   const [year, month, day] = appointment.date.split('-');
   const dateFormatted = `${day}/${month}/${year}`;
   const endTime = appointment.endTime || calculateEndTime(appointment.time, service.durationMin);
+  const clinicName = settings.clinicName || 'Clau Podologia';
+  const profName = professional?.name || 'Dra. Laura Mendes';
+  const fullAddress = `${settings.address || 'Av. Paulista, 1200, Sala 804 - Bela Vista'}, ${settings.city || 'São Paulo - SP'}`;
 
   return (
-    `*Confirmação de Agendamento - ${settings.clinicName}*\n\n` +
-    `Olá, *${appointment.clientName}*! Seu horário de podologia foi agendado com sucesso.\n\n` +
-    `📅 *Data:* ${dateFormatted}\n` +
-    `⏰ *Horário:* ${appointment.time} às ${endTime} (${service.durationMin} min)\n` +
-    `🩺 *Tratamento:* ${service.name}\n` +
-    `👩‍⚕️ *Especialista:* ${professional.name}\n` +
-    `💰 *Valor Estimado:* R$ ${appointment.price.toFixed(2)}\n` +
-    `📍 *Local:* ${settings.address}, ${settings.city}\n` +
-    `🔖 *Código do Agendamento:* ${appointment.code}\n\n` +
-    `_Caso precise remarcar ou cancelar com antecedência, avise-nos por aqui ou acesse nosso site informando seu código. Até breve!_`
+    `Confirmação de Agendamento - ${clinicName}\n\n` +
+    `Olá, ${appointment.clientName}! Seu horário de podologia foi agendado com sucesso.\n\n` +
+    `📅 Data: ${dateFormatted}\n` +
+    `⏰ Horário: ${appointment.time} às ${endTime} (${service.durationMin} min)\n` +
+    `🩺 Tratamento: ${service.name}\n` +
+    `👩‍⚕️ Especialista: ${profName}\n` +
+    `💰 Valor: R$ ${appointment.price.toFixed(2)}\n` +
+    `📍 Local: ${fullAddress}\n` +
+    `🔖 Código do Agendamento: ${appointment.code}\n` +
+    (appointment.notes ? `📝 Observações: ${appointment.notes}\n` : '') +
+    `\nCaso precise remarcar ou cancelar com antecedência, avise-nos por aqui ou acesse nosso site informando seu código. Até breve!`
   );
 }
 
