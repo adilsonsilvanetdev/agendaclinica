@@ -28,7 +28,9 @@
           "type": "string",
           "enum": ["whatsapp", "email", "ambos"]
         },
-        "price": { "type": "number" }
+        "price": { "type": "number" },
+        "durationMin": { "type": "number" },
+        "endTime": { "type": "string" }
       },
       "required": ["code", "clientName", "clientPhone", "serviceId", "professionalId", "date", "time", "status"]
     },

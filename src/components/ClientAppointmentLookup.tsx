@@ -18,6 +18,7 @@ import {
   cancelAppointmentByClient,
   buildWhatsAppLink,
   formatWhatsAppCancellationMessage,
+  calculateEndTime,
 } from '../services/storage';
 
 interface ClientAppointmentLookupProps {
@@ -294,10 +295,10 @@ export const ClientAppointmentLookup: React.FC<ClientAppointmentLookupProps> = (
                       <div>
                         <span className="text-slate-400 block text-[11px]">Data & Horário:</span>
                         <span className="font-bold text-teal-900 tabular-nums">
-                          {apt.date.split('-').reverse().join('/')} às {apt.time}
+                          {apt.date.split('-').reverse().join('/')} das {apt.time} às {apt.endTime || calculateEndTime(apt.time, apt.durationMin || srv?.durationMin || 50)}
                         </span>
                         <span className="text-slate-500 block text-xs">
-                          Com {prof?.name || 'Podólogo Especialista'}
+                          Com {prof?.name || 'Podólogo Especialista'} ({apt.durationMin || srv?.durationMin || 50} min)
                         </span>
                       </div>
 

@@ -20,6 +20,8 @@ import {
   getStoredAppointments,
   buildWhatsAppLink,
   formatWhatsAppConfirmationMessage,
+  calculateEndTime,
+  AvailableSlot,
 } from '../services/storage';
 
 interface BookingFlowProps {
@@ -87,10 +89,27 @@ export const BookingFlow: React.FC<BookingFlowProps> = ({
   const selectedService = services.find((s) => s.id === selectedServiceId) || services[0];
   const selectedProfessional = professionals.find((p) => p.id === selectedProfessionalId) || professionals[0];
 
-  // Available slots for selected date & professional
-  const slots = useMemo(() => {
-    return getAvailableSlots(selectedDate, selectedProfessionalId, settings.openHour, settings.closeHour, appointments);
-  }, [selectedDate, selectedProfessionalId, settings.openHour, settings.closeHour, appointments, confirmedAppointment]);
+  // Available slots calculating treatment duration and organizing future schedule
+  const slots: AvailableSlot[] = useMemo(() => {
+    return getAvailableSlots(
+      selectedDate,
+      selectedProfessionalId,
+      settings.openHour,
+      settings.closeHour,
+      appointments,
+      selectedService.durationMin
+    );
+  }, [
+    selectedDate,
+    selectedProfessionalId,
+    settings.openHour,
+    settings.closeHour,
+    appointments,
+    selectedService.durationMin,
+    confirmedAppointment,
+  ]);
+
+  const selectedSlot = useMemo(() => slots.find((s) => s.time === selectedTime), [slots, selectedTime]);
 
   // If selected time is in the past or taken, reset it
   useEffect(() => {
@@ -219,6 +238,8 @@ export const BookingFlow: React.FC<BookingFlowProps> = ({
         professionalId: selectedProfessionalId,
         date: selectedDate,
         time: selectedTime,
+        endTime: selectedSlot?.endTime || calculateEndTime(selectedTime, selectedService.durationMin),
+        durationMin: selectedService.durationMin,
         confirmationChannel: 'whatsapp',
         price: selectedService.price,
       });
@@ -299,8 +320,8 @@ export const BookingFlow: React.FC<BookingFlowProps> = ({
                 <p className="text-xs sm:text-sm text-slate-600 mt-1.5 leading-relaxed">
                   Consulta reservada com sucesso para <strong className="text-slate-800">{confirmedAppointment.clientName}</strong> no dia{' '}
                   <strong className="text-emerald-900 font-bold">
-                    {confirmedAppointment.date.split('-').reverse().join('/')} às {confirmedAppointment.time}
-                  </strong>.
+                    {confirmedAppointment.date.split('-').reverse().join('/')} das {confirmedAppointment.time} às {confirmedAppointment.endTime || calculateEndTime(confirmedAppointment.time, selectedService.durationMin)}
+                  </strong> ({selectedService.durationMin} min).
                 </p>
                 <div className="mt-3 pt-2.5 border-t border-slate-100 flex items-center justify-between text-xs">
                   <span className="font-mono font-bold text-slate-700 bg-slate-100 px-2 py-0.5 rounded-md">
@@ -565,18 +586,31 @@ export const BookingFlow: React.FC<BookingFlowProps> = ({
             </div>
           </div>
 
-          {/* Time Slots Grid */}
-          <div>
-            <div className="flex items-center justify-between mb-2">
+          {/* Time Slots Grid with Treatment Duration Calculation */}
+          <div className="space-y-3">
+            {/* Treatment Duration Notice */}
+            <div className="p-3 bg-teal-50/70 border border-teal-200/80 rounded-xl flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs text-teal-950">
+              <div className="flex items-center gap-2">
+                <Clock className="w-4 h-4 text-teal-700 shrink-0" />
+                <span>
+                  Tempo estimado do tratamento: <strong className="font-bold">{selectedService.durationMin} minutos</strong> ({selectedService.name})
+                </span>
+              </div>
+              <span className="text-[11px] font-semibold text-teal-800 bg-white/90 px-2 py-0.5 rounded-md border border-teal-200 w-fit">
+                Horários calculados para evitar sobreposição
+              </span>
+            </div>
+
+            <div className="flex items-center justify-between">
               <label className="text-xs font-semibold text-slate-700 uppercase tracking-wider">
                 Horários Disponíveis ({selectedDate.split('-').reverse().join('/')})
               </label>
-              <span className="text-xs text-slate-500">
+              <span className="text-xs text-slate-500 font-medium">
                 {slots.filter((s) => s.available).length} horários livres
               </span>
             </div>
 
-            <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-6 gap-2.5">
+            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-2.5">
               {slots.map((slot) => {
                 const isSelected = selectedTime === slot.time;
                 return (
@@ -584,30 +618,57 @@ export const BookingFlow: React.FC<BookingFlowProps> = ({
                     key={slot.time}
                     disabled={!slot.available}
                     onClick={() => setSelectedTime(slot.time)}
-                    className={`py-2.5 px-3 rounded-xl text-center text-sm font-semibold transition-all ${
+                    className={`p-2.5 rounded-xl text-center text-sm font-semibold transition-all flex flex-col justify-between ${
                       isSelected
                         ? 'bg-teal-700 text-white shadow-sm ring-2 ring-teal-600 ring-offset-1'
                         : slot.available
-                        ? 'bg-white border border-slate-200 text-slate-800 hover:border-teal-600 hover:bg-teal-50/30'
+                        ? 'bg-white border border-slate-200 text-slate-800 hover:border-teal-600 hover:bg-teal-50/40 cursor-pointer'
                         : slot.isPast
                         ? 'bg-slate-100 border border-slate-200/50 text-slate-400 cursor-not-allowed opacity-60'
-                        : 'bg-slate-100 border border-slate-200/60 text-slate-400 cursor-not-allowed line-through'
+                        : 'bg-slate-100 border border-slate-200/60 text-slate-400 cursor-not-allowed opacity-60'
                     }`}
                   >
-                    <div className="tabular-nums">{slot.time}</div>
-                    <div className="text-[10px] font-normal tracking-tight">
-                      {slot.available
-                        ? isSelected
-                          ? 'Escolhido'
-                          : 'Disponível'
-                        : slot.isPast
-                        ? 'Passado'
-                        : 'Ocupado'}
+                    <div className="tabular-nums font-bold text-sm sm:text-base">{slot.time}</div>
+                    <div className={`text-[11px] tabular-nums mt-0.5 ${isSelected ? 'text-teal-100' : 'text-slate-500'}`}>
+                      até {slot.endTime}
+                    </div>
+                    <div className="mt-1 text-[10px] font-medium tracking-tight">
+                      {slot.available ? (
+                        isSelected ? (
+                          <span className="inline-flex items-center gap-0.5 text-white font-bold">
+                            <Check className="w-3 h-3" /> Selecionado
+                          </span>
+                        ) : (
+                          <span className="text-emerald-700 bg-emerald-50 px-1.5 py-0.5 rounded font-semibold">
+                            Disponível
+                          </span>
+                        )
+                      ) : slot.isPast ? (
+                        <span className="text-slate-400">Passado</span>
+                      ) : (
+                        <span className="text-rose-600 font-medium truncate block max-w-full" title={slot.collisionReason || 'Horário ocupado'}>
+                          Ocupado
+                        </span>
+                      )}
                     </div>
                   </button>
                 );
               })}
             </div>
+
+            {selectedTime && selectedSlot && (
+              <div className="p-3 bg-emerald-50 border border-emerald-300 rounded-xl text-xs sm:text-sm text-emerald-950 flex flex-col sm:flex-row sm:items-center justify-between gap-2 animate-in fade-in duration-200">
+                <div className="flex items-center gap-2">
+                  <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+                  <span>
+                    Horário reservado: <strong>{selectedDate.split('-').reverse().join('/')} das {selectedTime} às {selectedSlot.endTime}</strong> ({selectedService.durationMin} min com {selectedProfessional.name})
+                  </span>
+                </div>
+                <span className="text-xs font-bold text-emerald-800">
+                  Pronto para continuar!
+                </span>
+              </div>
+            )}
           </div>
 
           {/* Navigation */}
@@ -664,7 +725,7 @@ export const BookingFlow: React.FC<BookingFlowProps> = ({
               <span className="text-teal-800"> com {selectedProfessional.name}</span>
             </div>
             <div className="font-semibold text-teal-900 tabular-nums">
-              {selectedDate.split('-').reverse().join('/')} às {selectedTime} · R$ {selectedService.price.toFixed(2)}
+              {selectedDate.split('-').reverse().join('/')} das {selectedTime} às {calculateEndTime(selectedTime, selectedService.durationMin)} ({selectedService.durationMin} min) · R$ {selectedService.price.toFixed(2)}
             </div>
           </div>
 
@@ -890,7 +951,7 @@ export const BookingFlow: React.FC<BookingFlowProps> = ({
               <div>
                 <span className="text-xs text-slate-500 block">Data e Horário:</span>
                 <span className="font-semibold text-teal-800 tabular-nums">
-                  {confirmedAppointment.date.split('-').reverse().join('/')} às {confirmedAppointment.time}
+                  {confirmedAppointment.date.split('-').reverse().join('/')} das {confirmedAppointment.time} às {confirmedAppointment.endTime || calculateEndTime(confirmedAppointment.time, selectedService.durationMin)} ({selectedService.durationMin} min)
                 </span>
               </div>
               <div>

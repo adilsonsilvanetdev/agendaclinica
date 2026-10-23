@@ -34,6 +34,8 @@ export interface Appointment {
   professionalId: string;
   date: string; // YYYY-MM-DD
   time: string; // HH:mm
+  endTime?: string; // HH:mm
+  durationMin?: number; // minutos do tratamento
   status: AppointmentStatus;
   cancellationReason?: string;
   cancelledAt?: string;

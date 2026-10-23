@@ -298,11 +298,28 @@ export function generateAppointmentCode(): string {
   return `PODO-${num}`;
 }
 
+export function timeToMinutes(timeStr: string): number {
+  const [h, m] = (timeStr || '09:00').split(':').map(Number);
+  return (h || 0) * 60 + (m || 0);
+}
+
+export function minutesToTime(mins: number): string {
+  const h = Math.floor(mins / 60);
+  const m = mins % 60;
+  return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
+}
+
+export function calculateEndTime(startTime: string, durationMin: number): string {
+  return minutesToTime(timeToMinutes(startTime) + durationMin);
+}
+
 export function createAppointment(
   data: Omit<Appointment, 'id' | 'code' | 'createdAt' | 'status'>
 ): Appointment {
   const services = INITIAL_SERVICES;
   const service = services.find((s) => s.id === data.serviceId);
+  const duration = service ? service.durationMin : (data.durationMin || 50);
+  const calculatedEnd = data.endTime || calculateEndTime(data.time, duration);
 
   const newAppointment: Appointment = {
     ...data,
@@ -311,6 +328,8 @@ export function createAppointment(
     status: 'agendado',
     createdAt: new Date().toISOString(),
     price: service ? service.price : data.price || 130,
+    durationMin: duration,
+    endTime: calculatedEnd,
   };
 
   // 1. Save in-memory and local cache
@@ -539,18 +558,28 @@ export function resetDemoData(): void {
   window.dispatchEvent(new CustomEvent('podoclinica_data_updated', { detail: { type: 'reset' } }));
 }
 
-// Available time slots calculation synchronized with current time
+export interface AvailableSlot {
+  time: string; // HH:mm
+  endTime: string; // HH:mm
+  durationMin: number;
+  available: boolean;
+  isPast?: boolean;
+  bookedBy?: string;
+  collisionReason?: string;
+}
+
+// Available time slots calculation calculating treatment duration and organizing future schedule
 export function getAvailableSlots(
   dateStr: string,
   professionalId: string,
   openHour: number = 9,
   closeHour: number = 19,
-  providedAppointments?: Appointment[]
-): { time: string; available: boolean; isPast?: boolean; bookedBy?: string }[] {
+  providedAppointments?: Appointment[],
+  serviceDurationMin: number = 50
+): AvailableSlot[] {
   const appointments = providedAppointments && providedAppointments.length > 0
     ? providedAppointments
     : getStoredAppointments();
-  const slots: { time: string; available: boolean; isPast?: boolean; bookedBy?: string }[] = [];
 
   // Determine current local date & time
   const now = new Date();
@@ -558,34 +587,76 @@ export function getAvailableSlots(
   const nowMonth = String(now.getMonth() + 1).padStart(2, '0');
   const nowDay = String(now.getDate()).padStart(2, '0');
   const localTodayStr = `${nowYear}-${nowMonth}-${nowDay}`;
-  const currentHour = now.getHours();
+  const currentMinutesToday = now.getHours() * 60 + now.getMinutes();
 
   const isToday = dateStr === localTodayStr;
   const isPastDate = dateStr < localTodayStr;
 
-  // Generate slots from 09:00 up to 19:00 inclusive
-  for (let hour = openHour; hour <= closeHour; hour++) {
-    const timeStr = `${hour.toString().padStart(2, '0')}:00`;
+  const openMinutes = openHour * 60;
+  const closeMinutes = closeHour * 60;
 
-    // Past slot if whole date is in the past, or if today and the slot hour is already elapsed or current
-    const isPast = isPastDate || (isToday && hour <= currentHour);
+  // Active appointments for this professional on this date
+  const activeApts = appointments.filter(
+    (a) =>
+      a.date === dateStr &&
+      a.professionalId === professionalId &&
+      a.status === 'agendado'
+  );
 
-    // Only 'agendado' blocks the slot. Cancelled slots are immediately free!
-    const activeAppointment = appointments.find(
-      (a) =>
-        a.date === dateStr &&
-        a.time === timeStr &&
-        a.professionalId === professionalId &&
-        a.status === 'agendado'
+  // Map each active appointment to its busy [startMin, endMin) interval
+  const busyIntervals = activeApts.map((a) => {
+    const startMin = timeToMinutes(a.time);
+    const dur = a.durationMin || (INITIAL_SERVICES.find((s) => s.id === a.serviceId)?.durationMin || 50);
+    const endMin = a.endTime ? timeToMinutes(a.endTime) : (startMin + dur);
+    return {
+      appointment: a,
+      startMin,
+      endMin,
+    };
+  });
+
+  // Candidate start minutes:
+  // 1. Regular 30-minute intervals from openHour to closeHour
+  // 2. Exact end times of existing appointments (e.g. 09:50) so appointments can immediately follow
+  const candidateSet = new Set<number>();
+  for (let m = openMinutes; m <= closeMinutes - serviceDurationMin; m += 30) {
+    candidateSet.add(m);
+  }
+
+  for (const interval of busyIntervals) {
+    if (interval.endMin >= openMinutes && interval.endMin + serviceDurationMin <= closeMinutes) {
+      candidateSet.add(interval.endMin);
+    }
+  }
+
+  const sortedCandidates = Array.from(candidateSet).sort((a, b) => a - b);
+  const slots: AvailableSlot[] = [];
+
+  for (const startMin of sortedCandidates) {
+    const endMin = startMin + serviceDurationMin;
+    const timeStr = minutesToTime(startMin);
+    const endTimeStr = minutesToTime(endMin);
+
+    // Past slot if whole date is in the past, or if today and start is before current time
+    const isPast = isPastDate || (isToday && startMin <= currentMinutesToday);
+
+    // Collision check: intervals [candStart, candEnd) and [busyStart, busyEnd) overlap if candStart < busyEnd and candEnd > busyStart
+    const collision = busyIntervals.find(
+      (b) => startMin < b.endMin && endMin > b.startMin
     );
 
-    const available = !isPast && !activeAppointment;
+    const available = !isPast && !collision && endMin <= closeMinutes;
 
     slots.push({
       time: timeStr,
+      endTime: endTimeStr,
+      durationMin: serviceDurationMin,
       available,
       isPast,
-      bookedBy: activeAppointment ? activeAppointment.clientName : undefined,
+      bookedBy: collision ? collision.appointment.clientName : undefined,
+      collisionReason: collision
+        ? `Ocupado (${collision.appointment.time} às ${minutesToTime(collision.endMin)})`
+        : undefined,
     });
   }
 
@@ -607,12 +678,13 @@ export function formatWhatsAppConfirmationMessage(
 ): string {
   const [year, month, day] = appointment.date.split('-');
   const dateFormatted = `${day}/${month}/${year}`;
+  const endTime = appointment.endTime || calculateEndTime(appointment.time, service.durationMin);
 
   return (
     `*Confirmação de Agendamento - ${settings.clinicName}*\n\n` +
     `Olá, *${appointment.clientName}*! Seu horário de podologia foi agendado com sucesso.\n\n` +
     `📅 *Data:* ${dateFormatted}\n` +
-    `⏰ *Horário:* ${appointment.time}\n` +
+    `⏰ *Horário:* ${appointment.time} às ${endTime} (${service.durationMin} min)\n` +
     `🩺 *Tratamento:* ${service.name}\n` +
     `👩‍⚕️ *Especialista:* ${professional.name}\n` +
     `💰 *Valor Estimado:* R$ ${appointment.price.toFixed(2)}\n` +
