@@ -249,22 +249,6 @@ export const BookingFlow: React.FC<BookingFlowProps> = ({
       setShowSuccessToast(true);
       onAppointmentCreated(newApt);
       setStep(4);
-
-      // Disparo automático de notificação para o WhatsApp da Clínica
-      const waLink = buildWhatsAppLink(
-        settings.whatsapp,
-        formatWhatsAppBookingNoticeForClinic(
-          newApt,
-          selectedService,
-          selectedProfessional,
-          settings
-        )
-      );
-      try {
-        window.open(waLink, '_blank', 'noopener,noreferrer');
-      } catch {
-        // Pop-up blocked fallback
-      }
     } catch (err) {
       console.error(err);
       setValidationError('Não foi possível registrar o agendamento. Tente novamente.');
@@ -288,17 +272,32 @@ export const BookingFlow: React.FC<BookingFlowProps> = ({
     setNotes('');
   };
 
+  const stepContainerRef = React.useRef<HTMLDivElement>(null);
+
+  // Posiciona a visualização no início do formulário a cada etapa (evita parar no final do cadastro)
+  useEffect(() => {
+    window.scrollTo({ top: 0, left: 0, behavior: 'instant' });
+    document.documentElement.scrollTop = 0;
+    document.body.scrollTop = 0;
+    if (stepContainerRef.current) {
+      stepContainerRef.current.scrollIntoView({ behavior: 'instant', block: 'start' });
+    }
+  }, [step]);
+
+  const handleFinishBooking = () => {
+    setShowSuccessToast(false);
+    resetForm();
+  };
+
   return (
-    <div className="max-w-4xl mx-auto px-4 py-8 sm:py-12 relative">
-      {/* Pop-up: Agendamento Confirmado! (Centralizado na tela) */}
+    <div ref={stepContainerRef} className="max-w-4xl mx-auto px-4 py-8 sm:py-12 relative">
+      {/* Pop-up: Agendamento Confirmado! (Fechamento SOMENTE no clique em Finalizar) */}
       {showSuccessToast && confirmedAppointment && (
         <div 
-          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/40 backdrop-blur-xs animate-in fade-in duration-200"
-          onClick={() => setShowSuccessToast(false)}
+          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs animate-in fade-in duration-200"
         >
           <div 
             className="max-w-md w-full bg-white rounded-2xl border-2 border-emerald-500 shadow-2xl shadow-emerald-950/25 p-5 sm:p-6 animate-in zoom-in-95 duration-200"
-            onClick={(e) => e.stopPropagation()}
           >
             <div className="flex items-start gap-3.5">
               <div className="w-11 h-11 rounded-xl bg-emerald-100 text-emerald-700 flex items-center justify-center shrink-0 mt-0.5">
@@ -311,7 +310,7 @@ export const BookingFlow: React.FC<BookingFlowProps> = ({
                   </span>
                   <button
                     type="button"
-                    onClick={() => setShowSuccessToast(false)}
+                    onClick={handleFinishBooking}
                     className="p-1 text-slate-400 hover:text-slate-700 hover:bg-slate-100 rounded-lg text-xs font-bold transition-colors cursor-pointer"
                     aria-label="Fechar"
                   >
@@ -336,10 +335,10 @@ export const BookingFlow: React.FC<BookingFlowProps> = ({
                 <div className="mt-4 flex justify-end">
                   <button
                     type="button"
-                    onClick={() => setShowSuccessToast(false)}
+                    onClick={handleFinishBooking}
                     className="w-full sm:w-auto px-5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-medium text-xs sm:text-sm rounded-xl shadow-sm transition-colors cursor-pointer"
                   >
-                    Entendido
+                    Finalizar
                   </button>
                 </div>
               </div>
@@ -727,6 +726,7 @@ export const BookingFlow: React.FC<BookingFlowProps> = ({
               <input
                 type="text"
                 required
+                autoFocus
                 placeholder="Ex: Maria Clara Souza"
                 value={clientName}
                 onChange={(e) => setClientName(e.target.value)}

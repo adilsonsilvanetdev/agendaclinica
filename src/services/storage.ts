@@ -614,7 +614,7 @@ export function getAvailableSlots(
   // Map each active appointment to its busy [startMin, endMin) interval
   const busyIntervals = activeApts.map((a) => {
     const startMin = timeToMinutes(a.time);
-    const dur = a.durationMin || (INITIAL_SERVICES.find((s) => s.id === a.serviceId)?.durationMin || 50);
+    const dur = a.durationMin || (INITIAL_SERVICES.find((s) => s.id === a.serviceId)?.durationMin || 90);
     const endMin = a.endTime ? timeToMinutes(a.endTime) : (startMin + dur);
     return {
       appointment: a,
@@ -625,7 +625,7 @@ export function getAvailableSlots(
 
   // Candidate start minutes:
   // 1. Regular 30-minute intervals from openHour to closeHour
-  // 2. Exact end times of existing appointments (e.g. 09:50) so appointments can immediately follow
+  // 2. Exact end times of existing appointments so appointments can follow right after
   const candidateSet = new Set<number>();
   for (let m = openMinutes; m <= closeMinutes - serviceDurationMin; m += 30) {
     candidateSet.add(m);
@@ -653,7 +653,17 @@ export function getAvailableSlots(
       (b) => startMin < b.endMin && endMin > b.startMin
     );
 
-    const available = !isPast && !collision && endMin <= closeMinutes;
+    // Regra dos 90 minutos: se agendou um horário e ficou livre algum horário antes menor que 90 min do próximo agendado, marque ocupado
+    const nextApt = busyIntervals
+      .filter((b) => b.startMin > startMin)
+      .sort((a, b) => a.startMin - b.startMin)[0];
+
+    const freeWindowBeforeNext = nextApt ? nextApt.startMin - startMin : null;
+    const isInsufficientGap = nextApt !== undefined && freeWindowBeforeNext !== null && freeWindowBeforeNext < 90;
+
+    const isBeyondClosing = endMin > closeMinutes || (closeMinutes - startMin < 90);
+
+    const available = !isPast && !collision && !isInsufficientGap && !isBeyondClosing;
 
     slots.push({
       time: timeStr,
@@ -661,9 +671,17 @@ export function getAvailableSlots(
       durationMin: serviceDurationMin,
       available,
       isPast,
-      bookedBy: collision ? collision.appointment.clientName : undefined,
+      bookedBy: collision
+        ? collision.appointment.clientName
+        : isInsufficientGap && nextApt
+        ? nextApt.appointment.clientName
+        : undefined,
       collisionReason: collision
         ? `Ocupado (${collision.appointment.time} às ${minutesToTime(collision.endMin)})`
+        : isInsufficientGap && nextApt
+        ? `Ocupado (intervalo livre de ${freeWindowBeforeNext} min até ${nextApt.appointment.time} é menor que 90 min)`
+        : isBeyondClosing
+        ? `Horário excede o fechamento às ${minutesToTime(closeMinutes)}`
         : undefined,
     });
   }

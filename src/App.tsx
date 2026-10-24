@@ -119,8 +119,8 @@ export default function App() {
 
   return (
     <div className="min-h-screen flex flex-col bg-slate-50 text-slate-900 selection:bg-teal-100 selection:text-teal-900">
-      {/* Real-time Toast for Immediate Cancellation */}
-      {cancellationToast && cancellationToast.show && (
+      {/* Notificação em tempo real de cancelamento restrita ao acesso da clínica */}
+      {isAdminUnlocked && cancellationToast && cancellationToast.show && (
         <div className="fixed bottom-4 right-4 z-50 max-w-md w-full bg-slate-900 text-white p-4 rounded-2xl border border-slate-700 shadow-2xl animate-in fade-in slide-in-from-bottom-5 duration-300">
           <div className="flex items-start gap-3">
             <div className="w-8 h-8 rounded-xl bg-amber-500/20 text-amber-400 flex items-center justify-center shrink-0 mt-0.5">
@@ -218,6 +218,7 @@ export default function App() {
             onLock={() => setIsAdminUnlocked(false)}
             onUpdateSettings={(newSettings) => setSettings(newSettings)}
             onAppointmentsChange={reloadData}
+            onOpenNotifications={() => setIsNotificationsOpen(true)}
           />
         )}
       </main>

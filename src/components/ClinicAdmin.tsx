@@ -27,6 +27,7 @@ import {
   Database,
   Cloud,
   Trash2,
+  Bell,
 } from 'lucide-react';
 import { Appointment, Service, Professional, ClinicSettings, ClinicNotification } from '../types';
 import {
@@ -40,6 +41,7 @@ import {
   createAppointment,
   resetDemoData,
   calculateEndTime,
+  getAvailableSlots,
 } from '../services/storage';
 import { MonthlyStats } from './MonthlyStats';
 
@@ -54,6 +56,7 @@ interface ClinicAdminProps {
   onLock: () => void;
   onUpdateSettings: (settings: ClinicSettings) => void;
   onAppointmentsChange: () => void;
+  onOpenNotifications?: () => void;
 }
 
 export const ClinicAdmin: React.FC<ClinicAdminProps> = ({
@@ -67,6 +70,7 @@ export const ClinicAdmin: React.FC<ClinicAdminProps> = ({
   onLock,
   onUpdateSettings,
   onAppointmentsChange,
+  onOpenNotifications,
 }) => {
   // Authentication state
   const [pinInput, setPinInput] = useState('');
@@ -130,6 +134,36 @@ export const ClinicAdmin: React.FC<ClinicAdminProps> = ({
   }, [settings]);
 
   const todayStr = useMemo(() => new Date().toISOString().split('T')[0], []);
+  const unreadCount = useMemo(() => notifications.filter((n) => !n.read).length, [notifications]);
+
+  // Horários livres calculados sincronizados com a data, horário atual e regra dos 90 min verificados no banco de dados
+  const availableSlotsOnly = useMemo(() => {
+    const slots = getAvailableSlots(
+      newDate,
+      newProfId || professionals[0]?.id || '',
+      settings.openHour || 9,
+      settings.closeHour || 19,
+      appointments,
+      90
+    );
+    return slots.filter((s) => s.available);
+  }, [newDate, newProfId, professionals, appointments, settings]);
+
+  // Sincroniza o horário selecionado com o primeiro horário livre disponível
+  useEffect(() => {
+    if (availableSlotsOnly.length > 0) {
+      if (!availableSlotsOnly.some((s) => s.time === newTime)) {
+        setNewTime(availableSlotsOnly[0].time);
+      }
+    } else {
+      setNewTime('');
+    }
+  }, [availableSlotsOnly, newTime]);
+
+  const handleOpenAddNew = () => {
+    setNewDate(new Date().toISOString().split('T')[0]);
+    setIsAddingNew(true);
+  };
 
   // Handle PIN authentication
   const handleVerifyPin = (e: React.FormEvent) => {
@@ -223,10 +257,10 @@ export const ClinicAdmin: React.FC<ClinicAdminProps> = ({
   // Handle Quick Add
   const handleSaveQuickAppointment = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!newClientName || !newClientPhone) return;
+    if (!newClientName || !newClientPhone || !newTime) return;
 
     const srv = serviceMap.get(newServiceId);
-    const duration = srv?.durationMin || 50;
+    const duration = 90;
     const calculatedEndTime = calculateEndTime(newTime, duration);
 
     const newApt = createAppointment({
@@ -240,7 +274,7 @@ export const ClinicAdmin: React.FC<ClinicAdminProps> = ({
       date: newDate,
       time: newTime,
       endTime: calculatedEndTime,
-      durationMin: duration,
+      durationMin: 90,
       confirmationChannel: 'whatsapp',
       price: srv?.price || 130,
     });
@@ -372,8 +406,23 @@ export const ClinicAdmin: React.FC<ClinicAdminProps> = ({
         </div>
 
         <div className="flex items-center gap-2">
+          {onOpenNotifications && (
+            <button
+              onClick={onOpenNotifications}
+              className="inline-flex items-center gap-1.5 px-3 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white font-semibold text-xs rounded-xl transition-colors relative"
+              title="Notificações da Recepção"
+            >
+              <Bell className="w-3.5 h-3.5 text-amber-400" />
+              <span>Notificações</span>
+              {unreadCount > 0 && (
+                <span className="bg-rose-500 text-white text-[10px] font-bold px-1.5 py-0.2 rounded-full">
+                  {unreadCount}
+                </span>
+              )}
+            </button>
+          )}
           <button
-            onClick={() => setIsAddingNew(true)}
+            onClick={handleOpenAddNew}
             className="inline-flex items-center gap-1.5 px-3.5 py-2 bg-teal-600 hover:bg-teal-500 text-white font-semibold text-xs rounded-xl transition-colors"
           >
             <Plus className="w-4 h-4" />
@@ -1635,26 +1684,40 @@ export const ClinicAdmin: React.FC<ClinicAdminProps> = ({
                     type="date"
                     required
                     value={newDate}
+                    min={todayStr}
                     onChange={(e) => setNewDate(e.target.value)}
                     className="w-full px-3 py-2 text-xs rounded-xl border border-slate-300 bg-white"
                   />
                 </div>
                 <div>
-                  <label className="block text-xs font-semibold text-slate-700 mb-1">Horário de Início</label>
-                  <input
-                    type="time"
-                    required
-                    value={newTime}
-                    onChange={(e) => setNewTime(e.target.value)}
-                    className="w-full px-3 py-2 text-xs rounded-xl border border-slate-300 bg-white font-mono"
-                  />
+                  <label className="block text-xs font-semibold text-slate-700 mb-1">
+                    Horário Livre Disponível *
+                  </label>
+                  {availableSlotsOnly.length > 0 ? (
+                    <select
+                      required
+                      value={newTime}
+                      onChange={(e) => setNewTime(e.target.value)}
+                      className="w-full px-3 py-2 text-xs rounded-xl border border-slate-300 bg-white font-mono font-semibold text-teal-900 focus:outline-teal-600"
+                    >
+                      {availableSlotsOnly.map((slot) => (
+                        <option key={slot.time} value={slot.time}>
+                          {slot.time} às {slot.endTime} (90 min)
+                        </option>
+                      ))}
+                    </select>
+                  ) : (
+                    <div className="px-3 py-2 text-[11px] rounded-xl border border-rose-200 bg-rose-50 text-rose-700 font-medium">
+                      Sem horários livres nesta data
+                    </div>
+                  )}
                 </div>
               </div>
 
-              {/* Calculated duration & end time notice */}
+              {/* Calculated duration & end time notice (90 min) */}
               <div className="p-2.5 bg-teal-50 border border-teal-200 rounded-xl text-xs text-teal-950 flex items-center justify-between">
-                <span>Duração do tratamento: <strong>{serviceMap.get(newServiceId)?.durationMin || 50} min</strong></span>
-                <span>Término previsto: <strong>{calculateEndTime(newTime, serviceMap.get(newServiceId)?.durationMin || 50)}</strong></span>
+                <span>Duração do tratamento: <strong>90 min</strong></span>
+                <span>Término previsto: <strong>{newTime ? calculateEndTime(newTime, 90) : '--:--'}</strong></span>
               </div>
 
               <div>
@@ -1679,7 +1742,8 @@ export const ClinicAdmin: React.FC<ClinicAdminProps> = ({
               </button>
               <button
                 type="submit"
-                className="px-5 py-2.5 bg-teal-700 hover:bg-teal-800 text-white font-bold text-xs rounded-xl shadow-xs"
+                disabled={!newTime || availableSlotsOnly.length === 0}
+                className="px-5 py-2.5 bg-teal-700 hover:bg-teal-800 disabled:opacity-50 disabled:cursor-not-allowed text-white font-bold text-xs rounded-xl shadow-xs"
               >
                 Cadastrar Agendamento
               </button>
