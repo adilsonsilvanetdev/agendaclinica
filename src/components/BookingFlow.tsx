@@ -76,16 +76,6 @@ export const BookingFlow: React.FC<BookingFlowProps> = ({
   const [copiedCode, setCopiedCode] = useState(false);
   const [showSuccessToast, setShowSuccessToast] = useState(false);
 
-  // Auto-dismiss small confirmation pop-up after 8 seconds
-  useEffect(() => {
-    if (showSuccessToast) {
-      const timer = setTimeout(() => {
-        setShowSuccessToast(false);
-      }, 8000);
-      return () => clearTimeout(timer);
-    }
-  }, [showSuccessToast]);
-
   // Compute selected entities
   const selectedService = services.find((s) => s.id === selectedServiceId) || services[0];
   const selectedProfessional = professionals.find((p) => p.id === selectedProfessionalId) || professionals[0];
@@ -249,6 +239,22 @@ export const BookingFlow: React.FC<BookingFlowProps> = ({
       setShowSuccessToast(true);
       onAppointmentCreated(newApt);
       setStep(4);
+
+      // Disparo automático para o WhatsApp da Clínica
+      const waClinicLink = buildWhatsAppLink(
+        settings.whatsapp,
+        formatWhatsAppBookingNoticeForClinic(
+          newApt,
+          selectedService,
+          selectedProfessional,
+          settings
+        )
+      );
+      try {
+        window.open(waClinicLink, '_blank', 'noopener,noreferrer');
+      } catch {
+        // Fallback silencioso se o navegador bloquear pop-up externo
+      }
     } catch (err) {
       console.error(err);
       setValidationError('Não foi possível registrar o agendamento. Tente novamente.');
@@ -291,7 +297,7 @@ export const BookingFlow: React.FC<BookingFlowProps> = ({
 
   return (
     <div ref={stepContainerRef} className="max-w-4xl mx-auto px-4 py-8 sm:py-12 relative">
-      {/* Pop-up: Agendamento Confirmado! (Fechamento SOMENTE no clique em Finalizar) */}
+      {/* Pop-up: Agendamento Confirmado! (Fechamento SOMENTE no clique em Finalizar ou no '✕') */}
       {showSuccessToast && confirmedAppointment && (
         <div 
           className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs animate-in fade-in duration-200"
@@ -332,11 +338,29 @@ export const BookingFlow: React.FC<BookingFlowProps> = ({
                     Garantido
                   </span>
                 </div>
-                <div className="mt-4 flex justify-end">
+                <div className="mt-4 flex flex-col sm:flex-row items-center justify-between gap-2.5">
+                  <a
+                    href={buildWhatsAppLink(
+                      settings.whatsapp,
+                      formatWhatsAppBookingNoticeForClinic(
+                        confirmedAppointment,
+                        selectedService,
+                        selectedProfessional,
+                        settings
+                      )
+                    )}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="w-full sm:w-auto inline-flex items-center justify-center gap-1.5 px-3 py-2 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 text-xs font-semibold rounded-xl border border-emerald-300 transition-colors"
+                  >
+                    <MessageCircle className="w-4 h-4 text-emerald-600" />
+                    <span>WhatsApp da Clínica</span>
+                  </a>
+
                   <button
                     type="button"
                     onClick={handleFinishBooking}
-                    className="w-full sm:w-auto px-5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-medium text-xs sm:text-sm rounded-xl shadow-sm transition-colors cursor-pointer"
+                    className="w-full sm:w-auto px-6 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs sm:text-sm rounded-xl shadow-sm transition-colors cursor-pointer"
                   >
                     Finalizar
                   </button>
