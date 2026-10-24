@@ -226,7 +226,7 @@ export const ClinicAdmin: React.FC<ClinicAdminProps> = ({
     if (!newClientName || !newClientPhone) return;
 
     const srv = serviceMap.get(newServiceId);
-    const duration = srv?.durationMin || 90;
+    const duration = srv?.durationMin || 50;
     const calculatedEndTime = calculateEndTime(newTime, duration);
 
     const newApt = createAppointment({
@@ -610,10 +610,10 @@ export const ClinicAdmin: React.FC<ClinicAdminProps> = ({
                         <td className="py-3 px-4 whitespace-nowrap">
                           <div className="font-mono font-bold text-slate-900">{apt.code}</div>
                           <div className="text-xs text-teal-800 font-semibold tabular-nums">
-                            {apt.date.split('-').reverse().join('/')} das {apt.time} às {apt.endTime || calculateEndTime(apt.time, apt.durationMin || srv?.durationMin || 90)}
+                            {apt.date.split('-').reverse().join('/')} das {apt.time} às {apt.endTime || calculateEndTime(apt.time, apt.durationMin || srv?.durationMin || 50)}
                           </div>
                           <div className="text-[10px] text-slate-400">
-                            {apt.durationMin || srv?.durationMin || 90} minutos
+                            {apt.durationMin || srv?.durationMin || 50} minutos
                           </div>
                         </td>
 
@@ -732,7 +732,7 @@ export const ClinicAdmin: React.FC<ClinicAdminProps> = ({
                                     name: 'Tratamento Podológico',
                                     category: 'Geral',
                                     description: '',
-                                    durationMin: apt.durationMin || 90,
+                                    durationMin: apt.durationMin || 50,
                                     price: apt.price,
                                   },
                                   profMap.get(apt.professionalId) || professionals[0],
@@ -1469,7 +1469,7 @@ export const ClinicAdmin: React.FC<ClinicAdminProps> = ({
                       name: 'Tratamento Podológico',
                       category: 'Geral',
                       description: '',
-                      durationMin: viewingAppointment.durationMin || 90,
+                      durationMin: viewingAppointment.durationMin || 50,
                       price: viewingAppointment.price,
                     },
                     profMap.get(viewingAppointment.professionalId) || professionals[0],
@@ -1653,8 +1653,8 @@ export const ClinicAdmin: React.FC<ClinicAdminProps> = ({
 
               {/* Calculated duration & end time notice */}
               <div className="p-2.5 bg-teal-50 border border-teal-200 rounded-xl text-xs text-teal-950 flex items-center justify-between">
-                <span>Duração do tratamento: <strong>{serviceMap.get(newServiceId)?.durationMin || 90} min</strong></span>
-                <span>Término previsto: <strong>{calculateEndTime(newTime, serviceMap.get(newServiceId)?.durationMin || 90)}</strong></span>
+                <span>Duração do tratamento: <strong>{serviceMap.get(newServiceId)?.durationMin || 50} min</strong></span>
+                <span>Término previsto: <strong>{calculateEndTime(newTime, serviceMap.get(newServiceId)?.durationMin || 50)}</strong></span>
               </div>
 
               <div>

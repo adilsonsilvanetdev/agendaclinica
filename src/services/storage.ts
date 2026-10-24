@@ -326,7 +326,7 @@ export function createAppointment(
 ): Appointment {
   const services = INITIAL_SERVICES;
   const service = services.find((s) => s.id === data.serviceId);
-  const duration = service ? service.durationMin : (data.durationMin || 90);
+  const duration = service ? service.durationMin : (data.durationMin || 50);
   const calculatedEnd = data.endTime || calculateEndTime(data.time, duration);
 
   const newAppointment: Appointment = {
@@ -608,19 +608,14 @@ export function getAvailableSlots(
     (a) =>
       a.date === dateStr &&
       a.professionalId === professionalId &&
-      a.status === 'agendado' &&
-      !isAppointmentDeleted(a.id)
+      a.status === 'agendado'
   );
 
   // Map each active appointment to its busy [startMin, endMin) interval
   const busyIntervals = activeApts.map((a) => {
     const startMin = timeToMinutes(a.time);
-    const srv = INITIAL_SERVICES.find((s) => s.id === a.serviceId);
-    const dur = srv ? srv.durationMin : (a.durationMin || 90);
-    const calculatedDuration = Math.max(dur, a.durationMin || 90);
-    const endMin = a.endTime && (timeToMinutes(a.endTime) - startMin >= calculatedDuration)
-      ? timeToMinutes(a.endTime)
-      : (startMin + calculatedDuration);
+    const dur = a.durationMin || (INITIAL_SERVICES.find((s) => s.id === a.serviceId)?.durationMin || 50);
+    const endMin = a.endTime ? timeToMinutes(a.endTime) : (startMin + dur);
     return {
       appointment: a,
       startMin,
@@ -629,16 +624,15 @@ export function getAvailableSlots(
   });
 
   // Candidate start minutes:
-  // 1. Regular 30-minute intervals covering the full operating day
-  // (e.g. 09:00, 09:30, ..., 18:30 when closing at 19:00)
+  // 1. Regular 30-minute intervals from openHour to closeHour
+  // 2. Exact end times of existing appointments (e.g. 09:50) so appointments can immediately follow
   const candidateSet = new Set<number>();
-  for (let m = openMinutes; m <= closeMinutes - 30; m += 30) {
+  for (let m = openMinutes; m <= closeMinutes - serviceDurationMin; m += 30) {
     candidateSet.add(m);
   }
 
-  // 2. Exact end times of existing appointments so slots can follow immediately
   for (const interval of busyIntervals) {
-    if (interval.endMin >= openMinutes && interval.endMin <= closeMinutes - 30) {
+    if (interval.endMin >= openMinutes && interval.endMin + serviceDurationMin <= closeMinutes) {
       candidateSet.add(interval.endMin);
     }
   }
@@ -654,54 +648,12 @@ export function getAvailableSlots(
     // Past slot if whole date is in the past, or if today and start is before current time
     const isPast = isPastDate || (isToday && startMin <= currentMinutesToday);
 
-    // 1. Check if startMin falls inside an ongoing booked appointment
-    const insideAppointment = busyIntervals.find(
-      (b) => startMin >= b.startMin && startMin < b.endMin
-    );
-
-    // 2. Find the closest booked appointment that starts AFTER startMin
-    const upcomingAppointments = busyIntervals
-      .filter((b) => b.startMin > startMin)
-      .sort((a, b) => a.startMin - b.startMin);
-    const nextBusy = upcomingAppointments[0];
-
-    // Gap in minutes from startMin to the next booked appointment:
-    // If free gap is less than the required treatment duration (90 min), mark as occupied!
-    const gapToNext = nextBusy ? nextBusy.startMin - startMin : Infinity;
-    const hasInsufficientGapBeforeNext = nextBusy !== undefined && gapToNext < serviceDurationMin;
-
-    // 3. Overlap check with any booked appointment interval:
-    const overlappingAppointment = busyIntervals.find(
+    // Collision check: intervals [candStart, candEnd) and [busyStart, busyEnd) overlap if candStart < busyEnd and candEnd > busyStart
+    const collision = busyIntervals.find(
       (b) => startMin < b.endMin && endMin > b.startMin
     );
 
-    // 4. Check if remaining time until clinic closing is less than treatment duration
-    const minutesUntilClose = closeMinutes - startMin;
-    const hasInsufficientTimeUntilClose = endMin > closeMinutes;
-
-    let available = false;
-    let bookedBy: string | undefined = undefined;
-    let collisionReason: string | undefined = undefined;
-
-    if (insideAppointment) {
-      available = false;
-      bookedBy = insideAppointment.appointment.clientName;
-      collisionReason = `Ocupado (${insideAppointment.appointment.time} às ${minutesToTime(insideAppointment.endMin)})`;
-    } else if (hasInsufficientGapBeforeNext && nextBusy) {
-      // Se agendou um horário e ficou livre algum horário antes que seja menor aos 90 minutos do próximo, colocar ocupado
-      available = false;
-      bookedBy = nextBusy.appointment.clientName;
-      collisionReason = `Ocupado (intervalo livre de ${gapToNext} min antes das ${nextBusy.appointment.time} - requer ${serviceDurationMin} min)`;
-    } else if (overlappingAppointment) {
-      available = false;
-      bookedBy = overlappingAppointment.appointment.clientName;
-      collisionReason = `Ocupado (${overlappingAppointment.appointment.time} às ${minutesToTime(overlappingAppointment.endMin)})`;
-    } else if (hasInsufficientTimeUntilClose) {
-      available = false;
-      collisionReason = `Ocupado (apenas ${minutesUntilClose} min até o encerramento às ${minutesToTime(closeMinutes)} - requer ${serviceDurationMin} min)`;
-    } else if (!isPast) {
-      available = true;
-    }
+    const available = !isPast && !collision && endMin <= closeMinutes;
 
     slots.push({
       time: timeStr,
@@ -709,8 +661,10 @@ export function getAvailableSlots(
       durationMin: serviceDurationMin,
       available,
       isPast,
-      bookedBy,
-      collisionReason,
+      bookedBy: collision ? collision.appointment.clientName : undefined,
+      collisionReason: collision
+        ? `Ocupado (${collision.appointment.time} às ${minutesToTime(collision.endMin)})`
+        : undefined,
     });
   }
 
